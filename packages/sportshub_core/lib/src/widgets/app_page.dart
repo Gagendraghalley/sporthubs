@@ -51,9 +51,14 @@ class AppPage extends StatelessWidget {
 }
 
 /// Room for the bars above and below a scrolling page, plus a gutter.
+///
+/// Works from either side of the [AppPage]: a screen building one has a
+/// [context] above its Scaffold, whose padding doesn't count the app bar yet;
+/// a widget inside the body already has the app bar in its padding.
 EdgeInsets pagePadding(BuildContext context, {double horizontal = 16, double top = 12, double bottom = 24}) {
   final insets = MediaQuery.paddingOf(context);
-  return EdgeInsets.fromLTRB(horizontal, insets.top + top, horizontal, insets.bottom + bottom);
+  final appBar = context.findAncestorWidgetOfExactType<AppPage>() == null ? kToolbarHeight : 0.0;
+  return EdgeInsets.fromLTRB(horizontal, insets.top + appBar + top, horizontal, insets.bottom + bottom);
 }
 
 /// A translucent app bar that blurs what scrolls under it.

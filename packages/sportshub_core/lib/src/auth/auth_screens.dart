@@ -33,14 +33,23 @@ class PendingCode {
 
 final pendingCodeProvider = StateProvider<PendingCode?>((ref) => null);
 
-/// For visitors: what SportsHub has (each module's public pages), and
+/// For visitors: the lead module's own Welcome (SportsHubModule.buildWelcome)
+/// or, without one, what SportsHub has (each module's public pages), and
 /// signing up or in.
 class WelcomeScreen extends ConsumerWidget {
   const WelcomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final modules = ref.watch(enabledModulesProvider).valueOrNull ?? const <SportsHubModule>[];
+    final enabled = ref.watch(enabledModulesProvider);
+    // Just the background while the modules load, rather than flashing the
+    // plain page before a module's own.
+    if (enabled.isLoading && !enabled.hasValue) return const Scaffold(body: BrandBackdrop(child: SizedBox.expand()));
+    final modules = enabled.valueOrNull ?? const <SportsHubModule>[];
+    for (final m in modules) {
+      final page = m.buildWelcome(context);
+      if (page != null) return page;
+    }
     return AppPage(
       body: ListView(
         padding: pagePadding(context, horizontal: 20),

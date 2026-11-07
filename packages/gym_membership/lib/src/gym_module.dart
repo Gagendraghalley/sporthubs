@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportshub_core/sportshub_core.dart';
 
+import 'dashboard/gym_dashboard_page.dart';
 import 'data/gym_repository.dart';
+import 'home/gym_home_page.dart';
 import 'gym_routes.dart';
 import 'screens/check_in_screen.dart';
 import 'screens/member_screens.dart';
 import 'screens/staff_screens.dart';
+import 'welcome/gym_welcome_page.dart';
 import 'widgets/gym_widgets.dart';
 
 /// Module 2: gym membership. Members find a gym, ask for a plan, pay the gym
@@ -48,6 +51,7 @@ class GymModule extends SportsHubModule {
         GoRoute(path: GymRoutes.gyms, builder: (_, __) => const GymListScreen()),
         GoRoute(path: GymRoutes.myGym, builder: (_, __) => const MyGymScreen()),
         GoRoute(path: GymRoutes.gym, builder: (_, s) => GymDetailsScreen(venueId: s.pathParameters['id']!)),
+        GoRoute(path: GymRoutes.dashboard, builder: (_, s) => GymDashboardPage(venueId: s.pathParameters['id']!)),
         GoRoute(path: GymRoutes.checkIn, builder: (_, s) => CheckInScreen(venueId: s.pathParameters['id']!)),
         GoRoute(path: GymRoutes.requests, builder: (_, s) => RequestsScreen(venueId: s.pathParameters['id']!)),
         GoRoute(path: GymRoutes.members, builder: (_, s) => MembersScreen(venueId: s.pathParameters['id']!)),
@@ -73,6 +77,12 @@ class GymModule extends SportsHubModule {
 
   @override
   List<ModuleMenuItem> managerMenuItems(Venue venue, String role) => [
+        ModuleMenuItem(
+          title: 'Dashboard',
+          subtitle: 'Today, revenue, members and what just happened',
+          icon: Icons.space_dashboard_rounded,
+          route: GymRoutes.dashboardFor(venue.id),
+        ),
         ModuleMenuItem(
           title: 'Check in members',
           subtitle: 'Scan their QR code or type their code',
@@ -115,6 +125,15 @@ class GymModule extends SportsHubModule {
 
   @override
   Widget? buildHomeSection(BuildContext context) => const GymHomeSection();
+
+  @override
+  Widget? buildWelcome(BuildContext context) => const GymWelcomePage();
+
+  @override
+  Widget? buildHome(BuildContext context) => const GymHomePage();
+
+  @override
+  String? managerHomeRoute(Venue venue) => GymRoutes.dashboardFor(venue.id);
 
   @override
   Widget? buildManagerSection(BuildContext context, Venue venue, String role) =>

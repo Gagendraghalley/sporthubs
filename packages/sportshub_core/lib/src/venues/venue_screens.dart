@@ -398,7 +398,8 @@ class MyVenuesScreen extends ConsumerWidget {
                     final v = venues[i];
                     return VenueCard(
                       venue: v.venue,
-                      onTap: () => context.push(CoreRoutes.venueManageFor(v.venue.id)),
+                      onTap: () => context.push(
+                          venueHomeRoute(ref.read(enabledModulesProvider).valueOrNull ?? const [], v.venue)),
                       trailing: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [

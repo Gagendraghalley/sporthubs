@@ -29,6 +29,11 @@ String? guardRoute({
   return null;
 }
 
+/// Whether the web address carries something other than a page after the '#',
+/// such as Supabase's '#error=access_denied&...' when an email link has
+/// expired. Pages are '#/...'; the router can't open anything else.
+bool hasNonPageFragment(Uri uri) => uri.fragment.isNotEmpty && !uri.fragment.startsWith('/');
+
 /// [next] when it's a page of this app ('/gyms/1'), not another site.
 String? safeNext(String? next) =>
     next != null && next.startsWith('/') && !next.startsWith('//') && !next.contains('://') ? next : null;

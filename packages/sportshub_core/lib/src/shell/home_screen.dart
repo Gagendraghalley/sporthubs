@@ -8,25 +8,36 @@ import '../notifications/notifications_screen.dart';
 import '../profiles/profile_repository.dart';
 import '../router/core_routes.dart';
 import '../theme/brand.dart';
+import '../theme/theme_mode.dart';
 import '../utils/formatters.dart';
 import '../venues/venue_repository.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
 
-/// The signed-in home: a section for each enabled module, then the
-/// user's venues and registering one.
+/// The signed-in home: the lead module's own (SportsHubModule.buildHome) or
+/// a section for each enabled module, then the user's venues and registering
+/// one.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(enabledModulesProvider);
+    // Just the background while the modules load, rather than flashing the
+    // plain home before a module's own.
+    if (enabled.isLoading && !enabled.hasValue) return const Scaffold(body: BrandBackdrop(child: SizedBox.expand()));
+    for (final m in enabled.valueOrNull ?? const <SportsHubModule>[]) {
+      final page = m.buildHome(context);
+      if (page != null) return page;
+    }
     final profile = ref.watch(myProfileProvider).valueOrNull;
     final myVenues = ref.watch(myVenuesProvider).valueOrNull ?? const [];
     final rows = {for (final r in ref.watch(appModulesProvider).valueOrNull ?? const []) r.key: r};
     return AppPage(
       titleWidget: const SportsHubLogo(height: 40, markOnly: true),
       actions: [
+        const ThemeModeButton(),
         const NotificationBell(),
         IconButton(
           tooltip: 'Account',
@@ -67,9 +78,8 @@ class HomeScreen extends ConsumerWidget {
                   icon: Icons.storefront_rounded,
                   title: 'Your venues',
                   subtitle: myVenues.length == 1 ? myVenues.first.venue.name : '${myVenues.length} venues',
-                  onTap: () => context.push(myVenues.length == 1
-                      ? CoreRoutes.venueManageFor(myVenues.first.venue.id)
-                      : CoreRoutes.manage),
+                  onTap: () => context.push(
+                      myVenues.length == 1 ? venueHomeRoute(modules, myVenues.first.venue) : CoreRoutes.manage),
                 ),
                 const SizedBox(height: 10),
               ],

@@ -42,6 +42,15 @@ final gymCheckInsTodayProvider = FutureProvider.family<List<GymCheckIn>, String>
   (ref, venueId) => ref.watch(gymRepositoryProvider).venueCheckIns(venueId, since: bhutanMidnightUtc(BhutanTime.today())),
 );
 
+/// The past week's check-ins at a gym (today and the 6 days before),
+/// newest first, for the dashboard's Recent activity.
+final gymRecentCheckInsProvider = FutureProvider.family<List<GymCheckIn>, String>(
+  (ref, venueId) => ref.watch(gymRepositoryProvider).venueCheckIns(
+        venueId,
+        since: bhutanMidnightUtc(BhutanTime.today().subtract(const Duration(days: 6))),
+      ),
+);
+
 final gymDashboardProvider = FutureProvider.family<GymDashboard, String>(
   (ref, venueId) => ref.watch(gymRepositoryProvider).dashboard(venueId),
 );
@@ -54,6 +63,7 @@ void refreshGym(WidgetRef ref, String venueId) {
   ref.invalidate(gymSubscriptionsProvider(venueId));
   ref.invalidate(gymDashboardProvider(venueId));
   ref.invalidate(gymCheckInsTodayProvider(venueId));
+  ref.invalidate(gymRecentCheckInsProvider(venueId));
 }
 
 /// Gym data. Plans, memberships and check-ins change only through the
@@ -125,7 +135,8 @@ class GymRepository {
         .select('*, gym:venues(name)')
         .eq('member_id', userId)
         .order('checked_in_at', ascending: false)
-        .limit(30);
+        // Enough for the home's 90-day chart, even training most days.
+        .limit(120);
     return rows.map(GymCheckIn.fromJson).toList();
   }
 

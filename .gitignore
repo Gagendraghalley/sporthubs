@@ -13,6 +13,7 @@ env.json
 .env*
 supabase/.temp/
 supabase/.branches/
+deploy.local.sh
 
 # Signing keys
 *.jks

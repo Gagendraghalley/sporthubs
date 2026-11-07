@@ -33,6 +33,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: CoreRoutes.root,
+    // Supabase.initialize has already read an email link's result; one that
+    // failed stays in the address ('#error=...'). Start at '/' then.
+    overridePlatformDefaultLocation: kIsWeb && hasNonPageFragment(Uri.base),
     refreshListenable: refresh,
     redirect: (context, state) {
       String? moduleKey;

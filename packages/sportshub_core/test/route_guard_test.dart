@@ -52,4 +52,14 @@ void main() {
     expect(safeNext('https://evil.example'), isNull);
     expect(safeNext(null), isNull);
   });
+
+  test('an expired email link in the address is not a page', () {
+    expect(
+      hasNonPageFragment(Uri.parse(
+          'http://localhost:8080/?error=access_denied#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')),
+      isTrue,
+    );
+    expect(hasNonPageFragment(Uri.parse('http://localhost:8080/#/welcome')), isFalse);
+    expect(hasNonPageFragment(Uri.parse('http://localhost:8080/')), isFalse);
+  });
 }

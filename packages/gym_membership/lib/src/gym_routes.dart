@@ -6,6 +6,7 @@ abstract final class GymRoutes {
   static const myGym = '/my-gym';
 
   // Running a gym: its staff (the database checks venue_staff).
+  static const dashboard = '/gyms/:id/manage';
   static const checkIn = '/gyms/:id/manage/check-in';
   static const requests = '/gyms/:id/manage/requests';
   static const members = '/gyms/:id/manage/members';
@@ -13,6 +14,7 @@ abstract final class GymRoutes {
   static const income = '/gyms/:id/manage/income';
 
   static String gymFor(String id) => '/gyms/$id';
+  static String dashboardFor(String id) => '/gyms/$id/manage';
   static String checkInFor(String id) => '/gyms/$id/manage/check-in';
   static String requestsFor(String id) => '/gyms/$id/manage/requests';
   static String membersFor(String id) => '/gyms/$id/manage/members';

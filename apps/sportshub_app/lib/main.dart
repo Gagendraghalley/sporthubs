@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ground_booking/ground_booking.dart';
 import 'package:gym_membership/gym_membership.dart';
 import 'package:sportshub_core/sportshub_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,8 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Every module in this build. Adding a service: its package, one line here,
 /// and its migration (supabase/migrations). Admins turn each on and off in
 /// app_modules (Admin -> Modules).
+///
+/// Gym membership only for now. Ground booking (packages/ground_booking)
+/// comes back with `GroundBookingModule(),` here and its import.
 const modules = <SportsHubModule>[
-  GroundBookingModule(),
   GymModule(),
 ];
 

@@ -35,3 +35,30 @@ class ThemeModeController extends Notifier<ThemeMode> {
     }
   }
 }
+
+/// Light or dark at a tap, for the top bars. It flips what shows now (the
+/// phone's own setting, under Auto); Account -> Appearance has Auto back.
+class ThemeModeButton extends ConsumerWidget {
+  /// The icon's colour; the bar's own when null.
+  final Color? color;
+
+  const ThemeModeButton({super.key, this.color});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return IconButton(
+      tooltip: dark ? 'Switch to light mode' : 'Switch to dark mode',
+      color: color,
+      onPressed: () => ref.read(themeModeProvider.notifier).set(dark ? ThemeMode.light : ThemeMode.dark),
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        transitionBuilder: (child, animation) => RotationTransition(
+          turns: Tween(begin: 0.75, end: 1.0).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+        child: Icon(dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, key: ValueKey(dark)),
+      ),
+    );
+  }
+}

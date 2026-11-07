@@ -53,7 +53,9 @@ SUPABASE_ACCESS_TOKEN=sbp_... SUPABASE_DB_PASSWORD=... scripts/deploy_supabase.s
 ```
 
 - `SUPABASE_ACCESS_TOKEN`: supabase.com/dashboard/account/tokens → Generate new token.
-- `SUPABASE_DB_PASSWORD`: the database password set when the project was made (Project Settings → Database → Reset database password if it's lost).
+- `SUPABASE_DB_PASSWORD`: the database password set when the project was made (Database → Settings → Reset database password if it's lost).
+- The database is reached through SportsHub's Session pooler, which works on networks without IPv6; it's built into the script. Deploying to a different project: set `SUPABASE_PROJECT_REF` and `SUPABASE_DB_URL` (that project's **Session pooler** string from the dashboard's Connect button, `[YOUR-PASSWORD]` included; the script puts the password in).
+- The auth step fails ("Email template modification is not available for free tier projects…") until SMTP is set up (below). Migrations and functions are deployed before it.
 
 The script applies only the migrations that aren't on the project yet, deploys the Edge Functions, pushes the auth settings in `supabase/config.toml`, and writes `env.json`. Run it again after any change in `supabase/`.
 

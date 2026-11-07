@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../router/core_routes.dart';
 import '../utils/launch.dart';
 import '../venues/venue.dart';
 
@@ -44,6 +45,20 @@ abstract class SportsHubModule {
   /// [name] and [playerMenuItems].
   Widget? buildHomeSection(BuildContext context) => null;
 
+  /// The whole signed-in home, when this module is the first enabled one
+  /// that has one (the app's lead service); null for none. With none, home
+  /// is the plain one: a section per module, Run a venue and admin.
+  Widget? buildHome(BuildContext context) => null;
+
+  /// The whole Welcome page for visitors, when this module is the first
+  /// enabled one that has one (the app's lead service); null for none. With
+  /// none, Welcome is the plain one: the logo, sign-up and sign-in.
+  Widget? buildWelcome(BuildContext context) => null;
+
+  /// Where someone running [venue] lands from Your venues: the module's own
+  /// console (e.g. a gym's dashboard); null for the venue's Manage page.
+  String? managerHomeRoute(Venue venue) => null;
+
   /// Shown above [managerMenuItems] on a venue's Manage page (e.g. today's
   /// numbers); null for nothing.
   Widget? buildManagerSection(BuildContext context, Venue venue, String role) => null;
@@ -53,6 +68,15 @@ abstract class SportsHubModule {
 
   /// Whether this module runs venues of [venueType].
   bool servesVenueType(String venueType) => venueKinds.any((k) => k.key == venueType && k.externalRegisterUrl == null);
+}
+
+/// Where someone running [venue] lands: the console of the module that runs
+/// it ([SportsHubModule.managerHomeRoute]), or else the venue's Manage page.
+String venueHomeRoute(Iterable<SportsHubModule> modules, Venue venue) {
+  for (final m in modules) {
+    if (m.servesVenueType(venue.type)) return m.managerHomeRoute(venue) ?? CoreRoutes.venueManageFor(venue.id);
+  }
+  return CoreRoutes.venueManageFor(venue.id);
 }
 
 /// A kind of venue a module serves (venue_types.key), e.g. 'gym'.

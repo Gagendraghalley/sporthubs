@@ -11,14 +11,25 @@
 #
 # SUPABASE_ACCESS_TOKEN: supabase.com/dashboard/account/tokens -> Generate new token.
 # SUPABASE_DB_PASSWORD:  the database password chosen when the project was made
-#                        (Project Settings -> Database -> Reset database password).
-# Neither is saved in the project.
+#                        (Database -> Settings -> Reset database password).
+# SUPABASE_DB_URL:       optional. The database is reached through the Session
+#                        pooler, which works on networks without IPv6; this
+#                        project's is built in. For another project, its Session
+#                        pooler string from the dashboard's Connect button,
+#                        [YOUR-PASSWORD] and all; the password goes in from
+#                        SUPABASE_DB_PASSWORD.
+# Neither secret is saved in the project.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PROJECT_REF="${SUPABASE_PROJECT_REF:-iagqntjaywpdxvoxgfhl}"
 : "${SUPABASE_ACCESS_TOKEN:?Set SUPABASE_ACCESS_TOKEN (supabase.com/dashboard/account/tokens)}"
 : "${SUPABASE_DB_PASSWORD:?Set SUPABASE_DB_PASSWORD (the database password of the project)}"
+# SportsHub's own Session pooler (no secret in it). Only for SportsHub: another
+# project falls back to a direct connection unless SUPABASE_DB_URL is set.
+if [[ -z "${SUPABASE_DB_URL:-}" && "$PROJECT_REF" == iagqntjaywpdxvoxgfhl ]]; then
+  SUPABASE_DB_URL='postgresql://postgres.iagqntjaywpdxvoxgfhl:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres'
+fi
 export SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD
 
 # Supabase CLI 3 (its flags differ from 2's), through npx with its own
@@ -30,7 +41,14 @@ echo "== Linking to project $PROJECT_REF"
 sb link --project-ref "$PROJECT_REF" --yes
 
 echo "== Database: applying new migrations"
-sb db push --remote --password "$SUPABASE_DB_PASSWORD" --yes
+if [[ -n "${SUPABASE_DB_URL:-}" ]]; then
+  # Through the pooler (IPv4). The password is URL-encoded: '@', '+', '/' and
+  # the like would otherwise break the URL.
+  password="$(node -e 'process.stdout.write(encodeURIComponent(process.env.SUPABASE_DB_PASSWORD))')"
+  sb db push --remote="${SUPABASE_DB_URL/\[YOUR-PASSWORD\]/$password}" --yes
+else
+  sb db push --remote --password "$SUPABASE_DB_PASSWORD" --yes
+fi
 
 echo "== Edge Functions"
 sb functions deploy --use-api --yes
