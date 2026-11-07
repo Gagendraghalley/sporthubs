@@ -1,0 +1,14 @@
+# SportsHub workspace (Dart pub workspace): one Flutter app built from a
+# shared core and one package per module. Run `flutter pub get` here once;
+# it resolves every package below together.
+name: sportshub_workspace
+publish_to: 'none'
+
+environment:
+  sdk: ^3.6.0
+
+workspace:
+  - apps/sportshub_app
+  - packages/sportshub_core
+  - packages/ground_booking
+  - packages/gym_membership

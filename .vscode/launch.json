@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SportsHub (website)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "apps/sportshub_app",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "toolArgs": ["--dart-define-from-file=env.json", "--web-port", "8080"]
+    },
+    {
+      "name": "SportsHub (phone)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "apps/sportshub_app",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=env.json"]
+    }
+  ]
+}

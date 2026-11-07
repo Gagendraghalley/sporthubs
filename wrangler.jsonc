@@ -1,0 +1,18 @@
+// The SportsHub website on Cloudflare Workers: static files only (the
+// Flutter web build). Served at https://sportshub.<your-subdomain>.workers.dev.
+//
+// From your computer:  scripts/deploy_web.sh
+// From GitHub (Cloudflare Workers Builds): build command `bash scripts/build_web.sh`,
+// deploy command `npx wrangler deploy`, and the build variables SUPABASE_URL and
+// SUPABASE_ANON_KEY (README, 'Website on Cloudflare').
+{
+  "name": "sportshub",
+  "compatibility_date": "2025-10-01",
+  "workers_dev": true,
+  "preview_urls": true,
+  "assets": {
+    "directory": "./apps/sportshub_app/build/web",
+    // Pages use hash URLs (/#/gyms), so every visit loads index.html anyway.
+    "not_found_handling": "single-page-application"
+  }
+}

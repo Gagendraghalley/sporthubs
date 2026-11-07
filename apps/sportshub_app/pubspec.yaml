@@ -1,0 +1,30 @@
+name: sportshub_app
+description: SportsHub - sports venues and gym memberships in Bhutan, on the web, Android and iOS.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  supabase_flutter: ^2.8.0
+  sportshub_core:
+    path: ../../packages/sportshub_core
+  # Modules: add a package here and one line in lib/main.dart.
+  ground_booking:
+    path: ../../packages/ground_booking
+  gym_membership:
+    path: ../../packages/gym_membership
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

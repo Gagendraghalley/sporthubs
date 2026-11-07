@@ -1,0 +1,14 @@
+# Lints for every package in the workspace (each finds this file by walking up).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/build/**"
+    - "**/*.g.dart"
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    always_declare_return_types: true
+    avoid_print: true
+    unawaited_futures: false

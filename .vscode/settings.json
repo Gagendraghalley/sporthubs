@@ -1,0 +1,6 @@
+{
+  // Supabase Edge Functions run on Deno, not Node: check them with the Deno
+  // extension (denoland.vscode-deno). The Flutter app is unaffected.
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true
+}

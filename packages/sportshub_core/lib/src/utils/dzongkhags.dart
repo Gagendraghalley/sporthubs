@@ -1,0 +1,23 @@
+/// Bhutan's 20 dzongkhags, for addresses and for filtering venues.
+const dzongkhags = [
+  'Bumthang',
+  'Chhukha',
+  'Dagana',
+  'Gasa',
+  'Haa',
+  'Lhuentse',
+  'Mongar',
+  'Paro',
+  'Pemagatshel',
+  'Punakha',
+  'Samdrup Jongkhar',
+  'Samtse',
+  'Sarpang',
+  'Thimphu',
+  'Trashigang',
+  'Trashiyangtse',
+  'Trongsa',
+  'Tsirang',
+  'Wangdue Phodrang',
+  'Zhemgang',
+];

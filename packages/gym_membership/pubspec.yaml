@@ -1,0 +1,25 @@
+name: gym_membership
+description: SportsHub module 2 - gym plans, membership requests, payment confirmation, renewals, QR check-in and the gym owner's dashboard.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.6.0
+  supabase_flutter: ^2.8.0
+  mobile_scanner: ^7.2.0 # the gym staff's Check-in scans members' QR codes
+  qr_flutter: ^4.1.0 # the member's card on My gym
+  sportshub_core:
+    path: ../sportshub_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0

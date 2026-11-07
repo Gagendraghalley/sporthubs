@@ -1,0 +1,22 @@
+name: ground_booking
+description: SportsHub module 1 - ground booking and tournaments, which run on the separate ground booking website; this module links to it.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.6.0
+  sportshub_core:
+    path: ../sportshub_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0

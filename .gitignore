@@ -1,0 +1,26 @@
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.DS_Store
+
+# Settings with keys: never commit them (env.example.json shows what goes in)
+env.json
+*.env
+.env*
+supabase/.temp/
+supabase/.branches/
+
+# Signing keys
+*.jks
+*.keystore
+*.p8
+key.properties
+google-services.json
+GoogleService-Info.plist
+
+# Cloudflare
+.wrangler/
