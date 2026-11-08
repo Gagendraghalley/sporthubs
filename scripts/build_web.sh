@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the website into apps/sportshub_app/build/web, here or on a host
-# without Flutter (Cloudflare Workers Builds fetches it first).
+# without Flutter (Cloudflare Pages fetches it first).
 # Settings: apps/sportshub_app/env.json when it's there (your computer);
 # otherwise the host's variables SUPABASE_URL and SUPABASE_ANON_KEY (and,
 # optionally, GROUND_BOOKING_URL).

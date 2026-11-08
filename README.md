@@ -25,7 +25,6 @@ supabase/templates/code.html  the sign-in email, showing the 6-digit code
 supabase/test_users.sql       test accounts, one per role (test_users_remove.sql removes them)
 tests/database/               end-to-end checks of the database rules
 scripts/                      deploy_supabase.sh, build_web.sh, deploy_web.sh, test_database.sh
-wrangler.jsonc                the website on Cloudflare Workers
 ```
 
 Modules import only `sportshub_core`, never each other.
@@ -217,23 +216,25 @@ All modules are meant to run from one domain. Ground booking already owns its pa
 
 ## Website on Cloudflare
 
-The website is a Cloudflare Worker named `sporthubs` (`wrangler.jsonc`) that serves the Flutter web build as static files: https://sporthubs.gagenghaley123.workers.dev. The `name` in `wrangler.jsonc` must match the Worker's name in the dashboard, or Cloudflare's GitHub builds won't deploy.
+The website is a Cloudflare Pages project named `sporthubs` that serves the Flutter web build as static files: https://sporthubs.pages.dev. Every push to `main` builds and publishes it; other branches get a preview address of their own.
 
-From your computer (after `scripts/deploy_supabase.sh` has written `env.json`):
+It was set up once in Cloudflare: Workers & Pages → Create application → "Continue to Pages" (the link at the bottom) → Import an existing Git repository → `sporthubs`, with:
+
+- Production branch: `main`
+- Framework preset: None
+- Build command: `bash scripts/build_web.sh`
+- Build output directory: `apps/sportshub_app/build/web`
+- Environment variables: `SUPABASE_URL` = `https://iagqntjaywpdxvoxgfhl.supabase.co`, `SUPABASE_ANON_KEY` = the anon (publishable) key. It's public: it ships inside the website anyway, and the database rules protect the data.
+
+To publish from your computer instead (after `scripts/deploy_supabase.sh` has written `env.json`):
 
 ```sh
 CLOUDFLARE_API_TOKEN=... scripts/deploy_web.sh
 ```
 
-Make the token at dash.cloudflare.com/profile/api-tokens → Create Token → "Edit Cloudflare Workers" template. Alternatively, run `npx wrangler login` once and leave the token out.
+Make the token at dash.cloudflare.com/profile/api-tokens → Create Token → Custom token, permission Account → Cloudflare Pages → Edit. Alternatively, run `npx wrangler login` once and leave the token out.
 
-Or from GitHub, on every push: Cloudflare → Workers & Pages → Create application → Import a repository → `sporthubs`, with:
-
-- Build command: `bash scripts/build_web.sh`
-- Deploy command: `npx wrangler deploy`
-- Build variables: `SUPABASE_URL` = `https://iagqntjaywpdxvoxgfhl.supabase.co`, `SUPABASE_ANON_KEY` = the anon (publishable) key. It's public: it ships inside the website anyway, and the database rules protect the data.
-
-When it moves to its own domain, add the domain to the Worker (Settings → Domains & Routes) and to `site_url` in `supabase/config.toml`, then run the Supabase deploy again.
+When it moves to its own domain, add the domain to the Pages project (Custom domains) and to `site_url` and `additional_redirect_urls` in `supabase/config.toml`, then run the Supabase deploy again.
 
 ## Releasing
 
