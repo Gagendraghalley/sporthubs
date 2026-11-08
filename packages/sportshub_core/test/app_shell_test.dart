@@ -4,14 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportshub_core/sportshub_core.dart';
 
-/// A stand-in service: its pages under `/<key>`, a heading over the second.
+/// A stand-in service: its pages under `/<key>`, a heading over the second;
+/// [setUp] false for one they only could start.
 class _Service extends SportsHubModule {
   @override
   final String key;
   @override
   final String name;
+  final bool setUp;
 
-  const _Service(this.key, this.name);
+  const _Service(this.key, this.name, {this.setUp = true});
 
   @override
   String get description => 'The $name service';
@@ -28,6 +30,7 @@ class _Service extends SportsHubModule {
         color: BrandColors.green,
         tagline: 'Owner',
         homeRoute: '/$key',
+        isSetUp: setUp,
         sections: [
           NavSection(items: [NavDestination(label: '$name home', icon: Icons.home_rounded, route: '/$key', exact: true)]),
           NavSection(title: 'Work', items: [NavDestination(label: '$name orders', icon: Icons.list_rounded, route: '/$key/orders')]),
@@ -79,13 +82,22 @@ void main() {
   const shop = _Service('shop', 'Shop');
   const cafe = _Service('cafe', 'Cafe');
 
-  testWidgets('signed in, a page sits in the frame: the platform, then each service', (tester) async {
-    await showShell(tester, const [shop, cafe]);
-    for (final label in ['Overview', 'My services', 'Notifications', 'SERVICES', 'Shop', 'Cafe']) {
+  testWidgets('the super admin: the platform, then each service, then Administration', (tester) async {
+    await showShell(tester, const [shop, _Service('cafe', 'Cafe', setUp: false)], team: true);
+    for (final label in ['Overview', 'My services', 'Notifications', 'SERVICES', 'Shop', 'Cafe', 'ADMINISTRATION']) {
       expect(inMenu(label), findsOneWidget, reason: label);
     }
     expect(selected(tester, 'Overview'), isTrue);
-    expect(inMenu('Administration'.toUpperCase()), findsNothing, reason: 'not on the team');
+  });
+
+  testWidgets("anyone else: only what they've been given", (tester) async {
+    await showShell(tester, const [shop, _Service('cafe', 'Cafe', setUp: false)], at: '/shop');
+    for (final label in ['Overview', 'My services', 'Notifications']) {
+      expect(inMenu(label), findsNothing, reason: "$label: the super admin's");
+    }
+    expect(inMenu('Shop'), findsOneWidget, reason: 'a service they work in');
+    expect(inMenu('Cafe'), findsNothing, reason: 'one they could only start');
+    expect(inMenu('ADMINISTRATION'), findsNothing, reason: 'not on the team');
   });
 
   testWidgets('visitors get the page alone', (tester) async {
@@ -134,7 +146,7 @@ void main() {
   });
 
   testWidgets('folded, the menu is icons; a service opens its pages beside it', (tester) async {
-    await showShell(tester, const [shop, cafe], at: '/shop');
+    await showShell(tester, const [shop, cafe], at: '/shop', team: true);
     await tester.tap(find.byTooltip('Collapse menu'));
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(PlatformSidebar)).width, sideMenuFoldedWidth);
@@ -156,6 +168,24 @@ void main() {
     expect(inMenu('Users'), findsOneWidget);
   });
 
+  testWidgets('every page in the frame ends its bar with the bell and the account menu', (tester) async {
+    for (final team in [false, true]) {
+      await showShell(tester, const [shop], at: '/shop', team: team);
+      final bar = find.byType(AppBar);
+      expect(find.descendant(of: bar, matching: find.byTooltip('Notifications, 3 unread')), findsOneWidget, reason: 'team: $team');
+      await tester.tap(find.descendant(of: bar, matching: find.byTooltip('Account and settings')));
+      await tester.pumpAndSettle();
+      for (final item in ['Pema Dorji', 'Account', 'Dark', 'Sign out']) {
+        expect(find.text(item), findsWidgets, reason: item);
+      }
+      await tester.tapAt(const Offset(700, 600));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: bar, matching: find.byTooltip('Notifications, 3 unread')));
+      await tester.pumpAndSettle();
+      expect(find.text('Page /notifications'), findsOneWidget, reason: 'the bell opens Notifications');
+    }
+  });
+
   testWidgets('on a phone the menu is a drawer, opened from the page bar', (tester) async {
     await showShell(tester, const [shop], at: '/shop', size: const Size(390, 844));
     expect(find.byType(PlatformSidebar), findsNothing);
@@ -170,8 +200,15 @@ void main() {
 
   testWidgets('a page in the frame on a phone opens the menu from its bar', (tester) async {
     var opened = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: AppShellScope(openMenu: () => opened++, child: const AppPage(title: 'Page', body: SizedBox())),
+    await tester.pumpWidget(ProviderScope(
+      // The bar's bell and account menu.
+      overrides: [
+        unreadCountProvider.overrideWithValue(0),
+        myProfileProvider.overrideWith((ref) async => Profile.fromJson({'id': 'u1', 'full_name': 'Pema Dorji'})),
+      ],
+      child: MaterialApp(
+        home: AppShellScope(openMenu: () => opened++, child: const AppPage(title: 'Page', body: SizedBox())),
+      ),
     ));
     await tester.tap(find.byTooltip('Menu'));
     expect(opened, 1);

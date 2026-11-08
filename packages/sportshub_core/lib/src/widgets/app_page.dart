@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../notifications/notifications_screen.dart';
+import '../shell/account_menu.dart';
 import '../shell/app_shell.dart';
 import '../shell/service_nav.dart';
 import '../theme/brand.dart';
@@ -48,7 +50,8 @@ class AppPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // In the app's frame on a phone, a page with nothing to go back to opens
-    // the menu from its bar.
+    // the menu from its bar. In the frame (signed in), the bar ends with
+    // their notifications and account.
     final scope = AppShellScope.maybeOf(context);
     final openMenu = scope?.openMenu;
     final service = scope?.service;
@@ -72,6 +75,7 @@ class AppPage extends StatelessWidget {
         actions: [
           ...?actions,
           if (service != null && service.actions.isNotEmpty) ServiceActionsButton(service: service),
+          if (scope != null) ...[const SizedBox(width: 4), const NotificationBell(), const AccountButton()],
         ],
         leading: lead,
       ),

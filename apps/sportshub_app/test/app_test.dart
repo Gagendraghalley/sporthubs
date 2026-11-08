@@ -60,13 +60,16 @@ class FakeNotifications extends Fake implements NotificationRepository {
   Stream<List<AppNotification>> watch(String userId) => Stream.value(const []);
 }
 
-/// A signed-in member: no SportsHub team roles.
+/// A signed-in member (no SportsHub team roles), or the super admin.
 class FakeAccess extends Fake implements AccessRepository {
+  FakeAccess({this.superAdmin = false});
+  final bool superAdmin;
+
   @override
-  Future<PlatformAccess> myAccess() async => const PlatformAccess(isSuperAdmin: false, isActive: true, permissions: {});
+  Future<PlatformAccess> myAccess() async => PlatformAccess(isSuperAdmin: superAdmin, isActive: true, permissions: const {});
 }
 
-Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gymOn = true}) async {
+Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gymOn = true, bool superAdmin = false}) async {
   tester.view.physicalSize = const Size(900, 3000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -78,7 +81,7 @@ Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gym
     venueRepositoryProvider.overrideWithValue(FakeVenues()),
     gymRepositoryProvider.overrideWithValue(FakeGym()),
     notificationRepositoryProvider.overrideWithValue(FakeNotifications()),
-    accessRepositoryProvider.overrideWithValue(FakeAccess()),
+    accessRepositoryProvider.overrideWithValue(FakeAccess(superAdmin: superAdmin)),
   ]);
   addTearDown(container.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const SportsHubApp()));
@@ -119,19 +122,32 @@ void main() {
     }
   });
 
-  testWidgets('signed in, running no gym yet: Overview shows how to start', (tester) async {
-    await pumpApp(tester, userId: 'u1');
+  testWidgets('the super admin, running no gym yet: Overview shows how to start', (tester) async {
+    final container = await pumpApp(tester, userId: 'u1', superAdmin: true);
+    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, CoreRoutes.home);
     expect(find.text('Overview'), findsWidgets);
     expect(find.text('Gym management'), findsWidgets, reason: 'the service, in the menu and on Overview');
     expect(find.text('Set up your gym'), findsWidgets);
     expect(find.textContaining('Work at a gym?'), findsOneWidget);
   });
 
-  testWidgets('pages of a module that is off send users home', (tester) async {
+  testWidgets("anyone else given nothing starts at their account, without the platform's pages", (tester) async {
+    final container = await pumpApp(tester, userId: 'u1');
+    final router = container.read(appRouterProvider);
+    expect(router.routerDelegate.currentConfiguration.uri.path, CoreRoutes.account);
+    expect(find.text('Overview'), findsNothing);
+    expect(find.text('Set up your gym'), findsNothing);
+    router.go(CoreRoutes.services);
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, CoreRoutes.account, reason: "My services is the super admin's");
+  });
+
+  testWidgets('pages of a module that is off send users to their start', (tester) async {
     final container = await pumpApp(tester, userId: 'u1', gymOn: false);
     container.read(appRouterProvider).go(GymRoutes.gyms);
     await tester.pumpAndSettle();
-    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, CoreRoutes.home);
+    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, CoreRoutes.account,
+        reason: 'home, which for someone given nothing is their account');
   });
 
   test('main.dart registers the gym module (others come back as their own modules)', () {

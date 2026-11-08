@@ -17,6 +17,7 @@ import '../shell/app_shell.dart';
 import '../shell/home_screen.dart';
 import '../shell/not_found_screen.dart';
 import '../shell/services_screen.dart';
+import '../shell/start_page.dart';
 import '../venues/venue_screens.dart';
 import '../venues/venue_staff_screen.dart';
 import 'core_routes.dart';
@@ -77,8 +78,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (_, state, child) => AppShell(location: state.uri.path, child: child),
         routes: [
-          GoRoute(path: CoreRoutes.home, builder: (_, __) => const HomeScreen()),
-          GoRoute(path: CoreRoutes.services, builder: (_, __) => const ServicesScreen()),
+          // The super admin's; anyone else goes on to their own first page.
+          GoRoute(path: CoreRoutes.home, builder: (_, __) => const PlatformPage(child: HomeScreen())),
+          GoRoute(path: CoreRoutes.services, builder: (_, __) => const PlatformPage(child: ServicesScreen())),
           GoRoute(path: CoreRoutes.account, builder: (_, __) => const AccountScreen()),
           GoRoute(path: CoreRoutes.editProfile, builder: (_, __) => const EditProfileScreen()),
           GoRoute(path: CoreRoutes.notifications, builder: (_, __) => const NotificationsScreen()),

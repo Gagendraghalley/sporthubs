@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../access/access.dart';
 import '../access/access_repository.dart';
 import '../admin/admin_repository.dart';
-import '../auth/auth_repository.dart';
 import '../notifications/notification_repository.dart';
 import '../profiles/profile_repository.dart';
 import '../router/core_routes.dart';
@@ -14,8 +13,10 @@ import '../theme/theme_mode.dart';
 import '../utils/launch.dart';
 import '../widgets/logo.dart';
 import '../widgets/motion.dart';
+import 'account_menu.dart';
 import 'app_shell.dart';
 import 'service_nav.dart';
+import 'start_page.dart';
 
 /// Widths at which the menu shows beside the page; under it, a drawer.
 const sideMenuFrom = 1100.0;
@@ -64,9 +65,15 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
   @override
   Widget build(BuildContext context) {
     final location = widget.location;
-    final services = serviceNavs(ref, location);
-    final admin = adminNav(ref.watch(myAccessProvider).valueOrNull ?? PlatformAccess.none,
-        pending: ref.watch(_pendingCountProvider));
+    final access = ref.watch(myAccessProvider).valueOrNull ?? PlatformAccess.none;
+    final platformPages = hasPlatformPages(access);
+    // The super admin sees every service; anyone else only those they work
+    // in, not the way to start one.
+    final services = [
+      for (final s in serviceNavs(ref, location))
+        if (platformPages || s.nav.isSetUp) s,
+    ];
+    final admin = adminNav(access, pending: ref.watch(_pendingCountProvider));
     final active = [
       for (final s in services)
         if (s.nav.isOpenAt(location) || s.module.ownsPath(location)) s.nav,
@@ -83,6 +90,7 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
           location: location,
           services: [for (final s in services) s.nav],
           admin: admin,
+          platformPages: platformPages,
           openSection: open,
           inDrawer: inDrawer,
           onToggleSection: (key) => setState(() {
@@ -163,6 +171,9 @@ class PlatformSidebar extends ConsumerStatefulWidget {
   final List<ServiceNav> services;
   final ServiceNav? admin;
 
+  /// Overview, My services and Notifications: the super admin's.
+  final bool platformPages;
+
   /// The key of the section that's open.
   final String? openSection;
   final ValueChanged<String> onToggleSection;
@@ -180,6 +191,7 @@ class PlatformSidebar extends ConsumerStatefulWidget {
     required this.openSection,
     required this.onToggleSection,
     this.admin,
+    this.platformPages = true,
     this.inDrawer = false,
     this.onFold,
   });
@@ -261,25 +273,27 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
                       child: ListView(
                         padding: EdgeInsets.zero,
                         children: [
-                          SideNavTile(
-                            icon: Icons.space_dashboard_rounded,
-                            label: 'Overview',
-                            selected: location == CoreRoutes.home,
-                            onTap: () => _open(CoreRoutes.home),
-                          ),
-                          SideNavTile(
-                            icon: Icons.apps_rounded,
-                            label: 'My services',
-                            selected: location == CoreRoutes.services,
-                            onTap: () => _open(CoreRoutes.services),
-                          ),
-                          SideNavTile(
-                            icon: Icons.notifications_none_rounded,
-                            label: 'Notifications',
-                            badge: unread,
-                            selected: location == CoreRoutes.notifications,
-                            onTap: () => _open(CoreRoutes.notifications),
-                          ),
+                          if (widget.platformPages) ...[
+                            SideNavTile(
+                              icon: Icons.space_dashboard_rounded,
+                              label: 'Overview',
+                              selected: location == CoreRoutes.home,
+                              onTap: () => _open(CoreRoutes.home),
+                            ),
+                            SideNavTile(
+                              icon: Icons.apps_rounded,
+                              label: 'My services',
+                              selected: location == CoreRoutes.services,
+                              onTap: () => _open(CoreRoutes.services),
+                            ),
+                            SideNavTile(
+                              icon: Icons.notifications_none_rounded,
+                              label: 'Notifications',
+                              badge: unread,
+                              selected: location == CoreRoutes.notifications,
+                              onTap: () => _open(CoreRoutes.notifications),
+                            ),
+                          ],
                           if (widget.services.isNotEmpty) ...[
                             SideNavHeading('Services', count: widget.services.length),
                             if (widget.services.length >= _findFrom && !folded) _FindService(onChanged: (v) => setState(() => _find = v)),
@@ -924,52 +938,14 @@ class _Me extends ConsumerWidget {
     final email = (profile?.email ?? '').trim();
     final subtitle = role ?? ((access?.isSuperAdmin ?? false) ? 'Super admin' : (email.isEmpty ? 'Signed in' : email));
     final folded = PlatformSidebar.isFolded(context);
-    final avatar = CircleAvatar(
-      radius: 17,
-      backgroundColor: BrandColors.orange,
-      child: Text(
-        name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-      ),
-    );
-
-    Future<void> choose(String value) async {
-      switch (value) {
-        case 'account':
-          context.go(CoreRoutes.account);
-        case 'light':
-          await ref.read(themeModeProvider.notifier).set(ThemeMode.light);
-        case 'dark':
-          await ref.read(themeModeProvider.notifier).set(ThemeMode.dark);
-        case 'system':
-          await ref.read(themeModeProvider.notifier).set(ThemeMode.system);
-        case 'out':
-          await ref.read(authRepositoryProvider).signOut();
-          if (context.mounted) context.go(CoreRoutes.welcome);
-      }
-    }
-
-    final menu = <PopupMenuEntry<String>>[
-      const PopupMenuItem(
-        value: 'account',
-        child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.person_outline_rounded), title: Text('Account')),
-      ),
-      const PopupMenuDivider(),
-      for (final (value, label, m) in [('light', 'Light', ThemeMode.light), ('dark', 'Dark', ThemeMode.dark), ('system', 'Match device', ThemeMode.system)])
-        CheckedPopupMenuItem(value: value, checked: mode == m, child: Text(label)),
-      const PopupMenuDivider(),
-      const PopupMenuItem(
-        value: 'out',
-        child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.logout_rounded), title: Text('Sign out')),
-      ),
-    ];
+    final avatar = AccountAvatar(name: name);
 
     return PopupMenuButton<String>(
       tooltip: 'Account and settings',
       position: PopupMenuPosition.over,
       offset: const Offset(0, -12),
-      onSelected: choose,
-      itemBuilder: (_) => menu,
+      onSelected: (value) => chooseFromAccountMenu(context, ref, value),
+      itemBuilder: (_) => accountMenuEntries(mode),
       child: folded
           ? Padding(padding: const EdgeInsets.only(top: 10), child: Center(child: avatar))
           : Container(

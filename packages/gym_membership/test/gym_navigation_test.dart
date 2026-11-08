@@ -91,10 +91,13 @@ void main() {
   const computer = Size(1440, 1000);
   const phone = Size(390, 844);
 
-  testWidgets("an owner's menu: the platform, then Gym management with their gym and its pages, grouped", (tester) async {
+  testWidgets("an owner's menu: Gym management with their gym and its pages, grouped", (tester) async {
     final router = await showApp(tester, computer, person(gyms: owner));
-    for (final label in ['Overview', 'My services', 'Notifications', 'Gym management', 'Druk Fitness Club']) {
+    for (final label in ['Gym management', 'Druk Fitness Club']) {
       expect(inMenu(label), findsOneWidget, reason: label);
+    }
+    for (final label in ['Overview', 'My services', 'Notifications']) {
+      expect(inMenu(label), findsNothing, reason: "$label: the super admin's");
     }
     for (final label in [
       'Dashboard', 'Check-in', 'Members', 'Register member', 'Memberships & packages', 'Payments & income',
@@ -143,6 +146,13 @@ void main() {
     expect(inMenu('Not set up yet'), findsOneWidget);
     expect(inMenu('Dashboard'), findsNothing);
     expect(inMenu('ADMINISTRATION'), findsOneWidget);
+  });
+
+  testWidgets("no gym, and not the super admin: nothing they haven't been given", (tester) async {
+    await showApp(tester, computer, person(), at: CoreRoutes.account);
+    for (final label in ['Overview', 'My services', 'Notifications', 'Gym management', 'Set up your gym', 'ADMINISTRATION']) {
+      expect(inMenu(label), findsNothing, reason: label);
+    }
   });
 
   testWidgets('switching gyms, and registering another, from the gym at the top of its section', (tester) async {
