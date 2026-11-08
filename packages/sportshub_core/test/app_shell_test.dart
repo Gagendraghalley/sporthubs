@@ -88,6 +88,9 @@ void main() {
       expect(inMenu(label), findsOneWidget, reason: label);
     }
     expect(selected(tester, 'Overview'), isTrue);
+    expect(find.descendant(of: find.byType(PlatformSidebar), matching: find.text('Developed by Innovates', findRichText: true)),
+        findsOneWidget, reason: 'the company, at the foot');
+    expect(inMenu('Pema Dorji'), findsNothing, reason: 'who is signed in is at the top right');
   });
 
   testWidgets("anyone else: only what they've been given", (tester) async {

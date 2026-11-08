@@ -6,13 +6,11 @@ import '../access/access.dart';
 import '../access/access_repository.dart';
 import '../admin/admin_repository.dart';
 import '../notifications/notification_repository.dart';
-import '../profiles/profile_repository.dart';
 import '../router/core_routes.dart';
 import '../theme/brand.dart';
 import '../utils/launch.dart';
 import '../widgets/logo.dart';
 import '../widgets/motion.dart';
-import 'account_menu.dart';
 import 'app_shell.dart';
 import 'service_nav.dart';
 import 'start_page.dart';
@@ -31,7 +29,7 @@ const sideMenuFoldedWidth = 84.0;
 /// The menu is made of services, not features: the platform's own pages
 /// (Overview, My services, Notifications), then a section per service, each
 /// with its icon, what it's working on (a gym of several) and its pages,
-/// then Administration for the SportsHub team, then who is signed in. The
+/// then Administration for the SportsHub team, then the company. The
 /// section of the page being used opens; the others fold to one line, so
 /// twenty services stay one short list.
 class PlatformShell extends ConsumerStatefulWidget {
@@ -164,7 +162,7 @@ ServiceNav? adminNav(PlatformAccess access, {int pending = 0}) {
 }
 
 /// The menu itself: the logo, the platform's pages, each service's section,
-/// Administration, and who is signed in. Navy in both themes.
+/// Administration, and the company (Innovates). Navy in both themes.
 class PlatformSidebar extends ConsumerStatefulWidget {
   final String location;
   final List<ServiceNav> services;
@@ -311,12 +309,7 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
                         ],
                       ),
                     ),
-                    _Me(
-                      role: [...widget.services, if (widget.admin != null) widget.admin!]
-                          .where((s) => s.isOpenAt(location))
-                          .firstOrNull
-                          ?.tagline,
-                    ),
+                    const _Company(),
                   ],
                 ),
               ),
@@ -921,59 +914,36 @@ class _CollapsibleState extends State<Collapsible> with SingleTickerProviderStat
   }
 }
 
-/// Who is signed in, and a menu: their account, light or dark, sign out.
-class _Me extends ConsumerWidget {
-  /// Their role in the service in use ('Owner'), if any.
-  final String? role;
+/// The company behind SportsHub, at the foot of the menu: 'Developed by'
+/// quiet, 'Innovates' in the brand's orange. Folded, just the name (the
+/// whole line as its tooltip). Who is signed in is at the top right of the
+/// page (AccountButton).
+class _Company extends StatelessWidget {
+  const _Company();
 
-  const _Me({this.role});
+  static const _company = 'Innovates';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(myProfileProvider).valueOrNull;
-    final access = ref.watch(myAccessProvider).valueOrNull;
-    final name = (profile?.fullName ?? '').trim();
-    final email = (profile?.email ?? '').trim();
-    final subtitle = role ?? ((access?.isSuperAdmin ?? false) ? 'Super admin' : (email.isEmpty ? 'Signed in' : email));
-    final folded = PlatformSidebar.isFolded(context);
-    final avatar = AccountAvatar(name: name);
-
-    return PopupMenuButton<String>(
-      tooltip: 'Account and settings',
-      position: PopupMenuPosition.over,
-      offset: const Offset(0, -12),
-      onSelected: (value) => chooseFromAccountMenu(context, ref, value),
-      itemBuilder: (_) => accountMenuEntries(),
-      child: folded
-          ? Padding(padding: const EdgeInsets.only(top: 10), child: Center(child: avatar))
-          : Container(
-              margin: const EdgeInsets.only(top: 10),
-              padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14)),
-              child: Row(
-                children: [
-                  avatar,
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name.isEmpty ? 'You' : name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13.5),
-                        ),
-                        Text(subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5)),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.more_vert_rounded, color: Colors.white.withValues(alpha: 0.6), size: 20),
-                ],
-              ),
+  Widget build(BuildContext context) {
+    const name = TextStyle(color: BrandColors.orange, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 0.2);
+    final quiet = TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w500, fontSize: 12);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: 14, bottom: 2),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),
+      child: PlatformSidebar.isFolded(context)
+          ? Tooltip(
+              message: 'Developed by $_company',
+              child: const FittedBox(fit: BoxFit.scaleDown, child: Text(_company, maxLines: 1, style: name)),
+            )
+          : Text.rich(
+              TextSpan(children: [
+                TextSpan(text: 'Developed by ', style: quiet),
+                const TextSpan(text: _company, style: name),
+              ]),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
     );
   }
