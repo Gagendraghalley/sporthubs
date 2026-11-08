@@ -8,6 +8,7 @@ import '../shell/account_menu.dart';
 import '../shell/app_shell.dart';
 import '../shell/service_nav.dart';
 import '../theme/brand.dart';
+import '../theme/theme_mode.dart';
 
 /// Every page's frame: a frosted-glass app bar with the page blurred behind
 /// it as it scrolls, over SportsHub's soft background. The content uses the
@@ -51,7 +52,7 @@ class AppPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // In the app's frame on a phone, a page with nothing to go back to opens
     // the menu from its bar. In the frame (signed in), the bar ends with
-    // their notifications and account.
+    // light or dark, their notifications and their account.
     final scope = AppShellScope.maybeOf(context);
     final openMenu = scope?.openMenu;
     final service = scope?.service;
@@ -75,7 +76,12 @@ class AppPage extends StatelessWidget {
         actions: [
           ...?actions,
           if (service != null && service.actions.isNotEmpty) ServiceActionsButton(service: service),
-          if (scope != null) ...[const SizedBox(width: 4), const NotificationBell(), const AccountButton()],
+          if (scope != null) ...[
+            const SizedBox(width: 4),
+            const ThemeModeButton(),
+            const NotificationBell(),
+            const AccountButton(),
+          ],
         ],
         leading: lead,
       ),

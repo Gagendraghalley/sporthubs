@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Light, dark, or as the phone is set (Account -> Appearance). Kept on the
-/// device.
+/// Light or dark (the bar's switch, or Account -> Appearance); as the phone is
+/// set until they choose. Kept on the device.
 final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(ThemeModeController.new);
 
 class ThemeModeController extends Notifier<ThemeMode> {
@@ -36,8 +36,8 @@ class ThemeModeController extends Notifier<ThemeMode> {
   }
 }
 
-/// Light or dark at a tap, for the top bars. It flips what shows now (the
-/// phone's own setting, under Auto); Account -> Appearance has Auto back.
+/// Light or dark at a tap, for the top bars. It flips what shows now: before
+/// they've chosen, the phone's own setting.
 class ThemeModeButton extends ConsumerWidget {
   /// The icon's colour; the bar's own when null.
   final Color? color;

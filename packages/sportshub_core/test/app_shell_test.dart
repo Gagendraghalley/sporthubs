@@ -168,15 +168,22 @@ void main() {
     expect(inMenu('Users'), findsOneWidget);
   });
 
-  testWidgets('every page in the frame ends its bar with the bell and the account menu', (tester) async {
+  testWidgets('every page in the frame ends its bar with light or dark, the bell and the account menu', (tester) async {
     for (final team in [false, true]) {
       await showShell(tester, const [shop], at: '/shop', team: team);
       final bar = find.byType(AppBar);
-      expect(find.descendant(of: bar, matching: find.byTooltip('Notifications, 3 unread')), findsOneWidget, reason: 'team: $team');
+      final theme = find.descendant(of: bar, matching: find.byType(ThemeModeButton));
+      final bell = find.descendant(of: bar, matching: find.byTooltip('Notifications, 3 unread'));
+      expect(bell, findsOneWidget, reason: 'team: $team');
+      expect(theme, findsOneWidget, reason: 'team: $team');
+      expect(tester.getCenter(theme).dx, lessThan(tester.getCenter(bell).dx), reason: 'light or dark comes before the bell');
       await tester.tap(find.descendant(of: bar, matching: find.byTooltip('Account and settings')));
       await tester.pumpAndSettle();
-      for (final item in ['Pema Dorji', 'Account', 'Dark', 'Sign out']) {
+      for (final item in ['Pema Dorji', 'Account', 'Sign out']) {
         expect(find.text(item), findsWidgets, reason: item);
+      }
+      for (final gone in ['Light', 'Dark', 'Match device']) {
+        expect(find.text(gone), findsNothing, reason: '$gone: the bar has the switch');
       }
       await tester.tapAt(const Offset(700, 600));
       await tester.pumpAndSettle();

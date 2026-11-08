@@ -6,22 +6,19 @@ import '../auth/auth_repository.dart';
 import '../profiles/profile_repository.dart';
 import '../router/core_routes.dart';
 import '../theme/brand.dart';
-import '../theme/theme_mode.dart';
 
-// The account menu (their account, light or dark, sign out): at the top
-// right of every signed-in page, and under the side menu.
+// The account menu (their account, sign out): at the top right of every
+// signed-in page, and under the side menu. Light or dark is the bar's own
+// switch (ThemeModeButton).
 
 /// The account menu's choices.
-List<PopupMenuEntry<String>> accountMenuEntries(ThemeMode mode) => [
-      const PopupMenuItem(
+List<PopupMenuEntry<String>> accountMenuEntries() => const [
+      PopupMenuItem(
         value: 'account',
         child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.person_outline_rounded), title: Text('Account')),
       ),
-      const PopupMenuDivider(),
-      for (final (value, label, m) in [('light', 'Light', ThemeMode.light), ('dark', 'Dark', ThemeMode.dark), ('system', 'Match device', ThemeMode.system)])
-        CheckedPopupMenuItem(value: value, checked: mode == m, child: Text(label)),
-      const PopupMenuDivider(),
-      const PopupMenuItem(
+      PopupMenuDivider(),
+      PopupMenuItem(
         value: 'out',
         child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.logout_rounded), title: Text('Sign out')),
       ),
@@ -32,12 +29,6 @@ Future<void> chooseFromAccountMenu(BuildContext context, WidgetRef ref, String v
   switch (value) {
     case 'account':
       context.go(CoreRoutes.account);
-    case 'light':
-      await ref.read(themeModeProvider.notifier).set(ThemeMode.light);
-    case 'dark':
-      await ref.read(themeModeProvider.notifier).set(ThemeMode.dark);
-    case 'system':
-      await ref.read(themeModeProvider.notifier).set(ThemeMode.system);
     case 'out':
       await ref.read(authRepositoryProvider).signOut();
       if (context.mounted) context.go(CoreRoutes.welcome);
@@ -70,7 +61,6 @@ class AccountButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(myProfileProvider).valueOrNull;
-    final mode = ref.watch(themeModeProvider);
     final name = (profile?.fullName ?? '').trim();
     final email = (profile?.email ?? '').trim();
     return PopupMenuButton<String>(
@@ -97,7 +87,7 @@ class AccountButton extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
-        ...accountMenuEntries(mode),
+        ...accountMenuEntries(),
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6),

@@ -9,7 +9,6 @@ import '../notifications/notification_repository.dart';
 import '../profiles/profile_repository.dart';
 import '../router/core_routes.dart';
 import '../theme/brand.dart';
-import '../theme/theme_mode.dart';
 import '../utils/launch.dart';
 import '../widgets/logo.dart';
 import '../widgets/motion.dart';
@@ -933,7 +932,6 @@ class _Me extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(myProfileProvider).valueOrNull;
     final access = ref.watch(myAccessProvider).valueOrNull;
-    final mode = ref.watch(themeModeProvider);
     final name = (profile?.fullName ?? '').trim();
     final email = (profile?.email ?? '').trim();
     final subtitle = role ?? ((access?.isSuperAdmin ?? false) ? 'Super admin' : (email.isEmpty ? 'Signed in' : email));
@@ -945,7 +943,7 @@ class _Me extends ConsumerWidget {
       position: PopupMenuPosition.over,
       offset: const Offset(0, -12),
       onSelected: (value) => chooseFromAccountMenu(context, ref, value),
-      itemBuilder: (_) => accountMenuEntries(mode),
+      itemBuilder: (_) => accountMenuEntries(),
       child: folded
           ? Padding(padding: const EdgeInsets.only(top: 10), child: Center(child: avatar))
           : Container(

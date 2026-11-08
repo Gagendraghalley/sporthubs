@@ -128,7 +128,11 @@ class _AppearanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(themeModeProvider);
+    // Light or dark; before they've chosen, what the phone shows.
+    final mode = switch (ref.watch(themeModeProvider)) {
+      ThemeMode.system => Theme.of(context).brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+      final chosen => chosen,
+    };
     return SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +143,6 @@ class _AppearanceCard extends ConsumerWidget {
             width: double.infinity,
             child: SegmentedButton<ThemeMode>(
               segments: const [
-                ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.brightness_auto_rounded)),
                 ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_rounded)),
                 ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_rounded)),
               ],
