@@ -22,6 +22,7 @@ supabase/migrations/          core, then one migration per module
 supabase/functions/           Edge Functions (delete-account, admin-users)
 supabase/config.toml          auth settings (email codes) and function settings
 supabase/templates/code.html  the sign-in email, showing the 6-digit code
+supabase/test_users.sql       test accounts, one per role (test_users_remove.sql removes them)
 tests/database/               end-to-end checks of the database rules
 scripts/                      deploy_supabase.sh, build_web.sh, deploy_web.sh, test_database.sh
 wrangler.jsonc                the website on Cloudflare Workers
@@ -82,6 +83,22 @@ update public.profiles set role = 'admin' where email = 'you@example.com';
 ```
 
 That makes you a **super admin**: you can do everything. You see SportsHub admin on the home page: **Users**, **Roles and permissions**, **Master data**, **Venues to verify** and **Modules**. From there you make the rest of the team's accounts and give them roles, so the SQL editor is only needed for this first one. Users can't change their own role.
+
+### Test accounts
+
+To try SportsHub as each role: Supabase → SQL Editor → New query, paste `supabase/test_users.sql`, put a password of your own on its `PASSWORD` line, and Run. It makes **SportsHub Test Gym** (verified, with two packages) and one account per role, all with that password. They sign in with email and password, so no email has to arrive.
+
+| Account | Role |
+|---|---|
+| `test.superadmin@example.com` | Super admin |
+| `test.admin@example.com` | Administrator |
+| `test.owner@example.com` | Owner of the test gym |
+| `test.manager@example.com` | Manager |
+| `test.frontdesk@example.com` | Front desk |
+| `test.trainer@example.com` | Trainer |
+| `test.member@example.com` | Member with an account: 3 months of Monthly at the test gym |
+
+Each role made under Roles and permissions gets `test.<role key>@example.com` too. Run it again after adding a role, or to put the passwords and roles back. While gym membership is off, only the super admin and the administrator see the gym's pages. They're real accounts, a super admin among them: remove them before launch with `supabase/test_users_remove.sql`.
 
 ### Turning gym membership on
 
@@ -200,7 +217,7 @@ All modules are meant to run from one domain. Ground booking already owns its pa
 
 ## Website on Cloudflare
 
-The website is a Cloudflare Worker named `sportshub` (`wrangler.jsonc`) that serves the Flutter web build as static files: https://sportshub.gagen123.workers.dev.
+The website is a Cloudflare Worker named `sporthubs` (`wrangler.jsonc`) that serves the Flutter web build as static files: https://sporthubs.gagen123.workers.dev. The `name` in `wrangler.jsonc` must match the Worker's name in the dashboard, or Cloudflare's GitHub builds won't deploy.
 
 From your computer (after `scripts/deploy_supabase.sh` has written `env.json`):
 
