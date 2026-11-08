@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- The launch screen: SportsHub's navy (LaunchBackground, top to bottom) and
+     the logo in the middle at 240pt wide (LaunchImage). The Flutter splash
+     (SportsHubSplash) draws the same, so the handover doesn't jump. -->
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="12121" systemVersion="16G29" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
     <dependencies>
         <deployment identifier="iOS"/>
@@ -16,11 +19,17 @@
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
+                            <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" image="LaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="Lbg-Im-001">
+                            </imageView>
                             <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.039215686274509803" green="0.10196078431372549" blue="0.24313725490196078" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
+                            <constraint firstItem="Lbg-Im-001" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="Lbg-Ct-001"/>
+                            <constraint firstItem="Lbg-Im-001" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="Lbg-Ct-002"/>
+                            <constraint firstItem="Lbg-Im-001" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="Lbg-Ct-003"/>
+                            <constraint firstItem="Lbg-Im-001" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="Lbg-Ct-004"/>
                             <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="1a2-6s-vTC"/>
                             <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="4X2-HB-R7a"/>
                         </constraints>
@@ -32,6 +41,7 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchImage" width="168" height="185"/>
+        <image name="LaunchBackground" width="4" height="512"/>
+        <image name="LaunchImage" width="240" height="129"/>
     </resources>
 </document>

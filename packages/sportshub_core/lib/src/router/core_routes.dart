@@ -9,7 +9,9 @@ abstract final class CoreRoutes {
   static const verify = '/verify';
   static const setPassword = '/set-password';
 
+  /// The platform's Overview, and every service on it.
   static const home = '/home';
+  static const services = '/services';
   static const account = '/account';
   static const editProfile = '/account/edit';
   static const notifications = '/notifications';
@@ -26,6 +28,16 @@ abstract final class CoreRoutes {
   static const admin = '/admin';
   static const adminVenues = '/admin/venues';
   static const adminModules = '/admin/modules';
+  static const adminUsers = '/admin/users';
+  static const adminUser = '/admin/users/:id';
+  static const adminRoles = '/admin/roles';
+  static const adminRoleNew = '/admin/roles/new';
+  static const adminRole = '/admin/roles/:id';
+  static const adminMasters = '/admin/masters';
+
+  static String adminUserFor(String id) => '/admin/users/$id';
+  static String adminRoleFor(String id) => '/admin/roles/$id';
+  static String adminRoleNewFor(String scope) => '$adminRoleNew?scope=$scope';
 
   static String registerVenueFor(String type) => '/register-venue/$type';
   static String venueManageFor(String id) => '/manage/$id';

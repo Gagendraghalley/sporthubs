@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../router/core_routes.dart';
+import '../shell/service_nav.dart';
+import '../theme/brand.dart';
 import '../utils/launch.dart';
 import '../venues/venue.dart';
 
-/// What every SportsHub module (ground booking, gym membership, later
-/// coaching, events...) gives the app. Modules depend only on
-/// sportshub_core, never on each other; the app lists them in main.dart.
+/// What every SportsHub service (gym management, ground booking, later
+/// coaching, events...) gives the platform. A service is a module: a package
+/// that depends only on sportshub_core, never on another module; the app
+/// lists them in main.dart.
 ///
-/// Adding a module = a package implementing this + one line in main.dart +
-/// one migration (its tables, and its row in app_modules).
+/// The platform draws every service the same way: its own section of the
+/// side menu ([navigation]), its card on Overview and My services
+/// ([buildOverviewCard]), its shortcuts. Adding one = a package implementing
+/// this + one line in main.dart + one migration (its tables, and its row in
+/// app_modules). Nothing else in the app changes.
 abstract class SportsHubModule {
   const SportsHubModule();
 
@@ -20,12 +27,19 @@ abstract class SportsHubModule {
   String get description;
   IconData get icon;
 
+  /// Its colour: its icon's tile in the menu, its cards, its accents.
+  Color get color => BrandColors.blue;
+
   /// The paths the module's pages live under, e.g. ['/gyms', '/my-gym'].
   /// While the module is turned off, the router sends these home.
   List<String> get basePaths => const [];
 
-  /// The module's pages.
+  /// The module's pages, inside the platform's frame (the side menu) for
+  /// signed-in users.
   List<RouteBase> get routes => const [];
+
+  /// Pages with no frame: full screen, outside the side menu's.
+  List<RouteBase> get fullScreenRoutes => const [];
 
   /// Route patterns visitors can open without signing in, e.g.
   /// ['/gyms', '/gyms/:id'].
@@ -37,18 +51,22 @@ abstract class SportsHubModule {
   /// For players and members: what the module offers them.
   List<ModuleMenuItem> playerMenuItems() => const [];
 
-  /// For someone running [venue] (one of this module's [venueKinds]) as
-  /// [role] (VenueRole): the pages that run it.
-  List<ModuleMenuItem> managerMenuItems(Venue venue, String role) => const [];
+  /// For someone running [venue] (one of this module's [venueKinds]): the
+  /// pages that run it that their role allows ([VenueAccess.can]).
+  List<ModuleMenuItem> managerMenuItems(Venue venue, VenueAccess access) => const [];
 
-  /// The module's section on the home page; null for a plain one made from
-  /// [name] and [playerMenuItems].
-  Widget? buildHomeSection(BuildContext context) => null;
+  /// The service's section of the side menu for whoever is signed in: what
+  /// it's working on (a gym of several), its pages that their roles allow,
+  /// grouped, and its shortcuts. [location] is the open page's path. Null
+  /// keeps it out of the menu; with nothing set up yet, a way to start.
+  ///
+  /// Read providers with `ref.watch`, so the menu follows them.
+  ServiceNav? navigation(WidgetRef ref, String location) => null;
 
-  /// The whole signed-in home, when this module is the first enabled one
-  /// that has one (the app's lead service); null for none. With none, home
-  /// is the plain one: a section per module, Run a venue and admin.
-  Widget? buildHome(BuildContext context) => null;
+  /// The service's card on Overview and My services: how things stand for
+  /// this person, and the way in. Null for a plain one from [name],
+  /// [description] and [navigation] (or [playerMenuItems]).
+  Widget? buildOverviewCard(BuildContext context) => null;
 
   /// The whole Welcome page for visitors, when this module is the first
   /// enabled one that has one (the app's lead service); null for none. With
@@ -61,7 +79,7 @@ abstract class SportsHubModule {
 
   /// Shown above [managerMenuItems] on a venue's Manage page (e.g. today's
   /// numbers); null for nothing.
-  Widget? buildManagerSection(BuildContext context, Venue venue, String role) => null;
+  Widget? buildManagerSection(BuildContext context, Venue venue, VenueAccess access) => null;
 
   /// Whether [path] is one of this module's pages.
   bool ownsPath(String path) => basePaths.any((base) => path == base || path.startsWith('$base/'));

@@ -57,6 +57,8 @@ class Payment {
         reference: json['reference'] as String?,
         status: json['status'] as String,
         createdAt: DateTime.parse(json['created_at'] as String),
-        payerName: (json['payer'] as Map<String, dynamic>?)?['full_name'] as String?,
+        // Their account's name, or the name written down for payers without
+        // one (a gym's walk-in members).
+        payerName: (json['payer'] as Map<String, dynamic>?)?['full_name'] as String? ?? json['payer_name'] as String?,
       );
 }

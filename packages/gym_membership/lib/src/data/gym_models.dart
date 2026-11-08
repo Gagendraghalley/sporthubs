@@ -47,7 +47,14 @@ class GymPlan {
 class GymSubscription {
   final String id;
   final String venueId;
+
+  /// Who it is for: their account id, or for a member registered at the
+  /// front desk their gym_members id ([gymMemberId] too). Either way one
+  /// person's memberships share it.
   final String memberId;
+
+  /// Set for a member registered at the front desk (no SportsHub account).
+  final String? gymMemberId;
   final String? planId;
   final String planName;
   final int durationDays;
@@ -68,6 +75,7 @@ class GymSubscription {
     required this.id,
     required this.venueId,
     required this.memberId,
+    this.gymMemberId,
     required this.planName,
     required this.durationDays,
     required this.price,
@@ -84,6 +92,9 @@ class GymSubscription {
   });
 
   bool get isPending => status == SubscriptionStatus.pending;
+
+  /// For a member registered at the front desk.
+  bool get isRegistered => gymMemberId != null;
 
   /// Paid and covering [today].
   bool isCurrentOn(DateTime today) =>
@@ -105,15 +116,18 @@ class GymSubscription {
 
   String get memberDisplayName => (memberName == null || memberName!.trim().isEmpty) ? 'Member' : memberName!.trim();
 
+  /// A gym_subscriptions row, with `member:profiles(...)` or
+  /// `registered:gym_members(full_name, phone, code)` when selected.
   factory GymSubscription.fromJson(Map<String, dynamic> json) {
-    final member = json['member'] as Map<String, dynamic>?;
+    final member = json['member'] as Map<String, dynamic>? ?? json['registered'] as Map<String, dynamic>?;
     final gym = json['gym'] as Map<String, dynamic>?;
     DateTime? date(String key) => json[key] == null ? null : BhutanTime.parseDate(json[key] as String);
     DateTime? moment(String key) => json[key] == null ? null : DateTime.parse(json[key] as String);
     return GymSubscription(
       id: json['id'] as String,
       venueId: json['venue_id'] as String,
-      memberId: json['member_id'] as String,
+      memberId: (json['member_id'] ?? json['gym_member_id']) as String,
+      gymMemberId: json['gym_member_id'] as String?,
       planId: json['plan_id'] as String?,
       planName: json['plan_name'] as String,
       durationDays: json['duration_days'] as int,
@@ -126,7 +140,7 @@ class GymSubscription {
       gymName: gym?['name'] as String?,
       memberName: member?['full_name'] as String?,
       memberPhone: member?['phone'] as String?,
-      memberCode: member?['member_code'] as String?,
+      memberCode: (member?['member_code'] ?? member?['code']) as String?,
     );
   }
 }
@@ -135,7 +149,10 @@ class GymSubscription {
 class GymCheckIn {
   final String id;
   final String venueId;
+
+  /// Their account id, or their gym_members id ([gymMemberId] too).
   final String memberId;
+  final String? gymMemberId;
   final DateTime checkedInAt;
   final String? gymName;
   final String? memberName;
@@ -145,6 +162,7 @@ class GymCheckIn {
     required this.venueId,
     required this.memberId,
     required this.checkedInAt,
+    this.gymMemberId,
     this.gymName,
     this.memberName,
   });
@@ -152,10 +170,11 @@ class GymCheckIn {
   factory GymCheckIn.fromJson(Map<String, dynamic> json) => GymCheckIn(
         id: json['id'] as String,
         venueId: json['venue_id'] as String,
-        memberId: json['member_id'] as String,
+        memberId: (json['member_id'] ?? json['gym_member_id']) as String,
+        gymMemberId: json['gym_member_id'] as String?,
         checkedInAt: DateTime.parse(json['checked_in_at'] as String),
         gymName: (json['gym'] as Map<String, dynamic>?)?['name'] as String?,
-        memberName: (json['member'] as Map<String, dynamic>?)?['full_name'] as String?,
+        memberName: ((json['member'] ?? json['registered']) as Map<String, dynamic>?)?['full_name'] as String?,
       );
 }
 
@@ -170,6 +189,12 @@ class CheckInResult {
   /// Check-ins earlier today (they may have come back, or been scanned twice).
   final int earlierToday;
 
+  /// For a member registered at the front desk: who, their photo (to see
+  /// it's them) and what the desk should know about their health.
+  final String? gymMemberId;
+  final String? photoPath;
+  final String? medicalNotes;
+
   const CheckInResult({
     required this.memberName,
     required this.planName,
@@ -177,6 +202,9 @@ class CheckInResult {
     required this.daysLeft,
     required this.earlierToday,
     this.memberCode,
+    this.gymMemberId,
+    this.photoPath,
+    this.medicalNotes,
   });
 
   factory CheckInResult.fromJson(Map<String, dynamic> json) => CheckInResult(
@@ -186,6 +214,9 @@ class CheckInResult {
         endDate: BhutanTime.parseDate(json['end_date'] as String),
         daysLeft: json['days_left'] as int,
         earlierToday: json['earlier_today'] as int? ?? 0,
+        gymMemberId: json['gym_member_id'] as String?,
+        photoPath: json['photo_path'] as String?,
+        medicalNotes: json['medical_notes'] as String?,
       );
 }
 

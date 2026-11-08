@@ -2,8 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sportshub_core/sportshub_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'dart:typed_data';
+
 import 'gym_models.dart';
 import 'member_qr.dart';
+import 'registered_member.dart';
 
 /// venue_types.key for gyms.
 const gymVenueType = 'gym';
@@ -19,20 +22,7 @@ final gymPlansProvider = FutureProvider.family<List<GymPlan>, ({String venueId, 
   (ref, q) => ref.watch(gymRepositoryProvider).plans(q.venueId, includeInactive: q.all),
 );
 
-/// The signed-in member's memberships and requests, at every gym.
-final mySubscriptionsProvider = FutureProvider<List<GymSubscription>>((ref) async {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) return const [];
-  return ref.watch(gymRepositoryProvider).mySubscriptions(userId);
-});
-
-final myCheckInsProvider = FutureProvider<List<GymCheckIn>>((ref) async {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) return const [];
-  return ref.watch(gymRepositoryProvider).myCheckIns(userId);
-});
-
-/// Every membership and request at a gym, for its staff.
+/// Every membership at a gym, for its staff.
 final gymSubscriptionsProvider = FutureProvider.family<List<GymSubscription>, String>(
   (ref, venueId) => ref.watch(gymRepositoryProvider).venueSubscriptions(venueId),
 );
@@ -51,8 +41,34 @@ final gymRecentCheckInsProvider = FutureProvider.family<List<GymCheckIn>, String
       ),
 );
 
+/// A gym's check-ins since a Bhutan date (up to 5,000), for its reports.
+final gymCheckInsSinceProvider = FutureProvider.family<List<GymCheckIn>, ({String venueId, DateTime since})>(
+  (ref, q) => ref.watch(gymRepositoryProvider).venueCheckIns(q.venueId, since: bhutanMidnightUtc(q.since), limit: 5000),
+);
+
 final gymDashboardProvider = FutureProvider.family<GymDashboard, String>(
   (ref, venueId) => ref.watch(gymRepositoryProvider).dashboard(venueId),
+);
+
+/// The members a gym registered at its front desk, by name.
+final gymMembersProvider = FutureProvider.family<List<GymMember>, String>(
+  (ref, venueId) => ref.watch(gymRepositoryProvider).registeredMembers(venueId),
+);
+
+/// One registered member, with their place's names.
+final gymMemberProvider = FutureProvider.autoDispose.family<GymMember?, String>(
+  (ref, id) => ref.watch(gymRepositoryProvider).registeredMember(id),
+);
+
+/// A registered member's visits, newest first.
+final gymMemberCheckInsProvider = FutureProvider.autoDispose.family<List<GymCheckIn>, String>(
+  (ref, id) => ref.watch(gymRepositoryProvider).registeredMemberCheckIns(id),
+);
+
+/// A member's photo (private: only the gym's staff may see it), kept while
+/// the app runs.
+final gymMemberPhotoProvider = FutureProvider.family<Uint8List?, String>(
+  (ref, path) => ref.watch(gymRepositoryProvider).memberPhoto(path),
 );
 
 /// The moment Bhutan's [date] begins, in UTC.
@@ -60,10 +76,12 @@ DateTime bhutanMidnightUtc(DateTime date) => DateTime.utc(date.year, date.month,
 
 /// After a change to a gym's memberships: everything that shows them.
 void refreshGym(WidgetRef ref, String venueId) {
+  ref.invalidate(gymMembersProvider(venueId));
   ref.invalidate(gymSubscriptionsProvider(venueId));
   ref.invalidate(gymDashboardProvider(venueId));
   ref.invalidate(gymCheckInsTodayProvider(venueId));
   ref.invalidate(gymRecentCheckInsProvider(venueId));
+  ref.invalidate(gymCheckInsSinceProvider);
 }
 
 /// Gym data. Plans, memberships and check-ins change only through the
@@ -73,6 +91,11 @@ class GymRepository {
   final SupabaseClient _client;
 
   static const _memberFields = 'full_name, phone, member_code';
+  static const _registeredFields = 'full_name, phone, code';
+  static const _gymMemberColumns = '*, village:villages(name), gewog:gewogs(name), dzongkhag:dzongkhags(name)';
+
+  /// Members' photos: private, in a folder per gym.
+  static const photoBucket = 'gym-member-photos';
 
   Future<List<GymPlan>> plans(String venueId, {bool includeInactive = false}) async {
     var query = _client.from('gym_plans').select().eq('venue_id', venueId);
@@ -101,63 +124,26 @@ class GymRepository {
         'is_active': isActive,
       }) as String;
 
-  /// The member asks for [planId]; the gym confirms once they've paid.
-  Future<String> requestSubscription(String planId) async =>
-      await _client.rpc('gym_request_subscription', params: {'plan_id': planId}) as String;
-
-  /// Calls off a pending request: the member, or the gym's staff.
-  Future<void> cancelSubscription(String subscriptionId) =>
-      _client.rpc('gym_cancel_subscription', params: {'subscription_id': subscriptionId});
-
-  /// Staff confirm the payment: the membership starts (the day after the
-  /// current one ends, for a renewal) and the payment is recorded.
-  Future<void> activateSubscription(String subscriptionId,
-          {required int amount, required PaymentMethod method, String? reference}) =>
-      _client.rpc('gym_activate_subscription', params: {
-        'subscription_id': subscriptionId,
-        'amount': amount,
-        'method': method.value,
-        'reference': (reference == null || reference.trim().isEmpty) ? null : reference.trim(),
-      });
-
-  Future<List<GymSubscription>> mySubscriptions(String userId) async {
-    final rows = await _client
-        .from('gym_subscriptions')
-        .select('*, gym:venues(name)')
-        .eq('member_id', userId)
-        .order('requested_at', ascending: false);
-    return rows.map(GymSubscription.fromJson).toList();
-  }
-
-  Future<List<GymCheckIn>> myCheckIns(String userId) async {
-    final rows = await _client
-        .from('gym_check_ins')
-        .select('*, gym:venues(name)')
-        .eq('member_id', userId)
-        .order('checked_in_at', ascending: false)
-        // Enough for the home's 90-day chart, even training most days.
-        .limit(120);
-    return rows.map(GymCheckIn.fromJson).toList();
-  }
-
   Future<List<GymSubscription>> venueSubscriptions(String venueId) async {
     final rows = await _client
         .from('gym_subscriptions')
-        .select('*, member:profiles!gym_subscriptions_member_id_fkey($_memberFields)')
+        .select('*, member:profiles!gym_subscriptions_member_id_fkey($_memberFields), '
+            'registered:gym_members!gym_subscriptions_gym_member_id_fkey($_registeredFields)')
         .eq('venue_id', venueId)
         .order('requested_at', ascending: false)
         .limit(1000);
     return rows.map(GymSubscription.fromJson).toList();
   }
 
-  Future<List<GymCheckIn>> venueCheckIns(String venueId, {required DateTime since}) async {
+  Future<List<GymCheckIn>> venueCheckIns(String venueId, {required DateTime since, int limit = 200}) async {
     final rows = await _client
         .from('gym_check_ins')
-        .select('*, member:profiles!gym_check_ins_member_id_fkey(full_name)')
+        .select('*, member:profiles!gym_check_ins_member_id_fkey(full_name), '
+            'registered:gym_members!gym_check_ins_gym_member_id_fkey(full_name)')
         .eq('venue_id', venueId)
         .gte('checked_in_at', since.toUtc().toIso8601String())
         .order('checked_in_at', ascending: false)
-        .limit(200);
+        .limit(limit);
     return rows.map(GymCheckIn.fromJson).toList();
   }
 
@@ -166,7 +152,9 @@ class GymRepository {
   Future<CheckInResult> checkIn(String venueId, MemberRef member) async {
     final result = member.id != null
         ? await _client.rpc('gym_check_in', params: {'venue_id': venueId, 'member_id': member.id})
-        : await _client.rpc('gym_check_in_by_code', params: {'venue_id': venueId, 'code': member.code});
+        : member.cardToken != null
+            ? await _client.rpc('gym_check_in_member', params: {'venue_id': venueId, 'qr_token': member.cardToken})
+            : await _client.rpc('gym_check_in_by_code', params: {'venue_id': venueId, 'code': member.code});
     return CheckInResult.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
@@ -174,4 +162,105 @@ class GymRepository {
     final result = await _client.rpc('gym_dashboard', params: {'venue_id': venueId});
     return GymDashboard.fromJson(Map<String, dynamic>.from(result as Map));
   }
+
+  // ─── Members registered at the front desk ─────────────────────────────
+
+  Future<List<GymMember>> registeredMembers(String venueId) async {
+    final rows = await _client.from('gym_members').select(_gymMemberColumns).eq('venue_id', venueId).order('full_name');
+    return rows.map(GymMember.fromJson).toList();
+  }
+
+  Future<GymMember?> registeredMember(String id) async {
+    final row = await _client.from('gym_members').select(_gymMemberColumns).eq('id', id).maybeSingle();
+    return row == null ? null : GymMember.fromJson(row);
+  }
+
+  /// The registered member whose card holds [qrToken], if this gym's.
+  Future<GymMember?> registeredMemberByCard(String venueId, String qrToken) async {
+    final row = await _client
+        .from('gym_members')
+        .select(_gymMemberColumns)
+        .eq('venue_id', venueId)
+        .eq('qr_token', qrToken)
+        .maybeSingle();
+    return row == null ? null : GymMember.fromJson(row);
+  }
+
+  Future<List<GymCheckIn>> registeredMemberCheckIns(String gymMemberId) async {
+    final rows = await _client
+        .from('gym_check_ins')
+        .select()
+        .eq('gym_member_id', gymMemberId)
+        .order('checked_in_at', ascending: false)
+        .limit(120);
+    return rows.map(GymCheckIn.fromJson).toList();
+  }
+
+  /// Registers a member, and sells them [sale] (from their date of joining)
+  /// if given. Returns their id.
+  Future<String> registerMember(String venueId, MemberDetails details, {PackageSale? sale}) async {
+    final result = await _client.rpc('gym_register_member', params: {
+      'venue_id': venueId,
+      'details': details.toJson(),
+      'plan_id': sale?.plan.id,
+      'months': sale?.months,
+      'amount': sale?.amount ?? 0,
+      'method': sale?.method?.value,
+      'reference': _clean(sale?.reference),
+    });
+    return (result as Map)['gym_member_id'] as String;
+  }
+
+  Future<void> updateMember(String gymMemberId, MemberDetails details) =>
+      _client.rpc('gym_update_member', params: {'gym_member_id': gymMemberId, 'details': details.toJson()});
+
+  /// Sells a registered member another package: from the day after their
+  /// current one ends, or today.
+  Future<void> renewMember(String gymMemberId, PackageSale sale) => _client.rpc('gym_renew_member', params: {
+        'gym_member_id': gymMemberId,
+        'plan_id': sale.plan.id,
+        'months': sale.months,
+        'amount': sale.amount,
+        'method': sale.method?.value,
+        'reference': _clean(sale.reference),
+      });
+
+  /// A new QR card for them; the old one stops working.
+  Future<String> reissueCard(String gymMemberId) async =>
+      await _client.rpc('gym_reissue_member_qr', params: {'gym_member_id': gymMemberId}) as String;
+
+  /// Uploads [bytes] as the photo of member [memberId] of gym [venueId] and
+  /// makes it theirs; their [oldPath] one is removed. Returns its path.
+  Future<String> setMemberPhoto({
+    required String venueId,
+    required String memberId,
+    required Uint8List bytes,
+    String contentType = 'image/jpeg',
+    String? oldPath,
+  }) async {
+    final ext = switch (contentType) { 'image/png' => 'png', 'image/webp' => 'webp', _ => 'jpg' };
+    final path = '$venueId/$memberId-${DateTime.now().millisecondsSinceEpoch}.$ext';
+    await _client.storage
+        .from(photoBucket)
+        .uploadBinary(path, bytes, fileOptions: FileOptions(contentType: contentType, upsert: true));
+    await _client.rpc('gym_set_member_photo', params: {'gym_member_id': memberId, 'photo_path': path});
+    if (oldPath != null && oldPath != path) {
+      try {
+        await _client.storage.from(photoBucket).remove([oldPath]);
+      } catch (_) {
+        // A leftover file is harmless; the member points at the new one.
+      }
+    }
+    return path;
+  }
+
+  Future<Uint8List?> memberPhoto(String path) async {
+    try {
+      return await _client.storage.from(photoBucket).download(path);
+    } on StorageException {
+      return null;
+    }
+  }
+
+  static String? _clean(String? v) => (v == null || v.trim().isEmpty) ? null : v.trim();
 }

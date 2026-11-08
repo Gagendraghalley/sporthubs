@@ -1,4 +1,4 @@
-// The whole app (core shell, router and both modules) with fake data
+// The whole app (core shell, router and the gym module) with fake data
 // instead of Supabase.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,7 +26,6 @@ class FakeModules extends Fake implements ModuleRepository {
 
   @override
   Future<List<AppModuleRow>> list() async => [
-        const AppModuleRow(key: 'ground_booking', name: 'Ground booking', isEnabled: true, sortOrder: 10),
         AppModuleRow(key: 'gym_membership', name: 'Gym membership', isEnabled: gymOn, sortOrder: 20),
       ];
 }
@@ -54,14 +53,17 @@ class FakeVenues extends Fake implements VenueRepository {
       ];
 }
 
-class FakeGym extends Fake implements GymRepository {
-  @override
-  Future<List<GymSubscription>> mySubscriptions(String userId) async => const [];
-}
+class FakeGym extends Fake implements GymRepository {}
 
 class FakeNotifications extends Fake implements NotificationRepository {
   @override
   Stream<List<AppNotification>> watch(String userId) => Stream.value(const []);
+}
+
+/// A signed-in member: no SportsHub team roles.
+class FakeAccess extends Fake implements AccessRepository {
+  @override
+  Future<PlatformAccess> myAccess() async => const PlatformAccess(isSuperAdmin: false, isActive: true, permissions: {});
 }
 
 Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gymOn = true}) async {
@@ -76,6 +78,7 @@ Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gym
     venueRepositoryProvider.overrideWithValue(FakeVenues()),
     gymRepositoryProvider.overrideWithValue(FakeGym()),
     notificationRepositoryProvider.overrideWithValue(FakeNotifications()),
+    accessRepositoryProvider.overrideWithValue(FakeAccess()),
   ]);
   addTearDown(container.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const SportsHubApp()));
@@ -84,39 +87,44 @@ Future<ProviderContainer> pumpApp(WidgetTester tester, {String? userId, bool gym
 }
 
 void main() {
-  testWidgets("visitors land on Welcome, with each module's public pages", (tester) async {
-    await pumpApp(tester);
-    expect(find.text('Create an account'), findsOneWidget);
-    expect(find.text('Book a ground'), findsOneWidget);
-    expect(find.text('Tournaments'), findsOneWidget);
-    expect(find.text('Find a gym'), findsOneWidget);
-    expect(find.text('My gym'), findsNothing, reason: 'it needs an account');
-  });
-
-  testWidgets('a module that is turned off is hidden', (tester) async {
-    await pumpApp(tester, gymOn: false);
-    expect(find.text('Book a ground'), findsOneWidget);
-    expect(find.text('Find a gym'), findsNothing);
-  });
-
-  testWidgets('visitors browse gyms, but sign in for My gym', (tester) async {
+  testWidgets('visitors land on the public Welcome page', (tester) async {
     final container = await pumpApp(tester);
-    await tester.tap(find.text('Find a gym'));
+    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, CoreRoutes.welcome);
+    expect(find.text('Find a gym'), findsWidgets);
+  });
+
+  testWidgets("visitors browse the gyms' public pages", (tester) async {
+    final container = await pumpApp(tester);
+    container.read(appRouterProvider).go(GymRoutes.gyms);
     await tester.pumpAndSettle();
     expect(find.text('Peak Fitness'), findsOneWidget);
+  });
 
-    container.read(appRouterProvider).go(GymRoutes.myGym);
+  testWidgets("a gym's staff pages need signing in", (tester) async {
+    final container = await pumpApp(tester);
+    container.read(appRouterProvider).go(GymRoutes.membersFor('g1'));
     await tester.pumpAndSettle();
     expect(find.text('Email me a code instead'), findsOneWidget, reason: 'the sign-in page');
   });
 
-  testWidgets('signed in: home has a section for each module', (tester) async {
+  testWidgets('signing in and signing up have a way back to the Welcome page', (tester) async {
+    final container = await pumpApp(tester);
+    final router = container.read(appRouterProvider);
+    for (final page in [CoreRoutes.signIn, CoreRoutes.signUp]) {
+      router.go(page);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Back to home'));
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, CoreRoutes.welcome, reason: page);
+    }
+  });
+
+  testWidgets('signed in, running no gym yet: Overview shows how to start', (tester) async {
     await pumpApp(tester, userId: 'u1');
-    expect(find.text('Hello, Pema'), findsOneWidget);
-    expect(find.text('Gym'), findsOneWidget);
-    expect(find.text('Ground booking'), findsOneWidget);
-    expect(find.text('Book a ground'), findsOneWidget);
-    expect(find.text('Register your venue'), findsOneWidget);
+    expect(find.text('Overview'), findsWidgets);
+    expect(find.text('Gym management'), findsWidgets, reason: 'the service, in the menu and on Overview');
+    expect(find.text('Set up your gym'), findsWidgets);
+    expect(find.textContaining('Work at a gym?'), findsOneWidget);
   });
 
   testWidgets('pages of a module that is off send users home', (tester) async {
@@ -126,7 +134,7 @@ void main() {
     expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, CoreRoutes.home);
   });
 
-  test('main.dart registers both modules', () {
-    expect(modules.map((m) => m.key), ['ground_booking', 'gym_membership']);
+  test('main.dart registers the gym module (others come back as their own modules)', () {
+    expect(modules.map((m) => m.key), ['gym_membership']);
   });
 }

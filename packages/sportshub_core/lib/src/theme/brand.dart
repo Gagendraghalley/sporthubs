@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+/// The platform's typeface, Plus Jakarta Sans (this package's pubspec): every
+/// service's pages, through the theme.
+const brandFont = 'packages/sportshub_core/PlusJakartaSans';
+
 /// SportsHub's colours, from the logo: navy 'Sport', orange 'Hub' and the
 /// blue of the 'S'.
 abstract final class BrandColors {
@@ -9,6 +13,10 @@ abstract final class BrandColors {
   static const green = Color(0xFF1B8A4B);
   static const amber = Color(0xFFB7791F);
   static const red = Color(0xFFC62828);
+
+  /// The deep navy of the side menu and the splash screen, top to bottom.
+  static const midnight = Color(0xFF0C2152);
+  static const night = Color(0xFF071229);
 }
 
 /// The frosted-glass look: translucent bars and cards over a soft

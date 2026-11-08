@@ -14,6 +14,8 @@ import '../utils/validators.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
+import '../widgets/splash.dart';
+import 'auth_layout.dart';
 import 'auth_repository.dart';
 
 /// Why a code was emailed, which decides where entering it leads.
@@ -42,10 +44,15 @@ class WelcomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(enabledModulesProvider);
-    // Just the background while the modules load, rather than flashing the
-    // plain page before a module's own.
-    if (enabled.isLoading && !enabled.hasValue) return const Scaffold(body: BrandBackdrop(child: SizedBox.expand()));
-    final modules = enabled.valueOrNull ?? const <SportsHubModule>[];
+    // The splash while the modules load, rather than flashing the plain page
+    // before a module's own.
+    return SplashGate(
+      ready: enabled.hasValue || !enabled.isLoading,
+      builder: (context) => _page(context, enabled.valueOrNull ?? const <SportsHubModule>[]),
+    );
+  }
+
+  Widget _page(BuildContext context, List<SportsHubModule> modules) {
     for (final m in modules) {
       final page = m.buildWelcome(context);
       if (page != null) return page;
@@ -152,63 +159,77 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppPage(
-      title: 'Sign in',
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: pagePadding(context, horizontal: 20),
-          children: [
-            const Center(child: SportsHubLogo(height: 90, markOnly: true)),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
-              validator: Validators.email,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _password,
-              obscureText: _hide,
-              autofillHints: const [AutofillHints.password],
-              onFieldSubmitted: (_) => _signIn(),
-              decoration: InputDecoration(
-                labelText: 'Password',
-                prefixIcon: const Icon(Icons.lock_outline_rounded),
-                suffixIcon: IconButton(
-                  tooltip: _hide ? 'Show password' : 'Hide password',
-                  icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                  onPressed: () => setState(() => _hide = !_hide),
+    return AuthLayout(
+      side: AuthSide.signIn,
+      title: 'Welcome Back!',
+      subtitle: 'Sign in to continue to your account',
+      onBack: () => context.go(CoreRoutes.welcome),
+      children: [
+        Form(
+          key: _form,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+                  validator: Validators.email,
                 ),
-              ),
-              validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _password,
+                  obscureText: _hide,
+                  autofillHints: const [AutofillHints.password],
+                  onFieldSubmitted: (_) => _signIn(),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: _hide ? 'Show password' : 'Hide password',
+                      icon: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      onPressed: () => setState(() => _hide = !_hide),
+                    ),
+                  ),
+                  validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
+                ),
+              ],
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _busy ? null : () => _sendCode(CodePurpose.resetPassword),
-                child: const Text('Forgot password?'),
-              ),
-            ),
-            if (_error != null) _ErrorText(_error!),
-            const SizedBox(height: 8),
-            FilledButton(onPressed: _busy ? null : _signIn, child: _ButtonLabel(busy: _busy, text: 'Sign in')),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => _sendCode(CodePurpose.signIn),
-              icon: const Icon(Icons.mark_email_read_outlined),
-              label: const Text('Email me a code instead'),
-            ),
-            const SizedBox(height: 24),
-            TextButton(
-              onPressed: () => context.pushReplacement(CoreRoutes.signUpFor(widget.next)),
-              child: const Text('New to SportsHub? Create an account'),
-            ),
-          ],
+          ),
         ),
-      ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _busy ? null : () => _sendCode(CodePurpose.resetPassword),
+            style: TextButton.styleFrom(
+              foregroundColor: context.brand.accent,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            child: const Text('Forgot password?'),
+          ),
+        ),
+        if (_error != null) ...[const SizedBox(height: 4), AuthError(_error!), const SizedBox(height: 14)],
+        const SizedBox(height: 6),
+        AuthPrimaryButton(label: 'Sign in', icon: Icons.arrow_forward_rounded, busy: _busy, onPressed: _signIn),
+        const SizedBox(height: 22),
+        const AuthDivider(text: 'or continue with'),
+        const SizedBox(height: 18),
+        AuthSecondaryButton(
+          label: 'Email me a code instead',
+          icon: Icons.mark_email_read_outlined,
+          onPressed: _busy ? null : () => _sendCode(CodePurpose.signIn),
+        ),
+        const SizedBox(height: 18),
+        AuthSwitchLink(
+          question: "Don't have an account?",
+          action: 'Register here',
+          onPressed: () => context.pushReplacement(CoreRoutes.signUpFor(widget.next)),
+        ),
+      ],
     );
   }
 }
@@ -259,58 +280,69 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppPage(
-      title: 'Create your account',
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: pagePadding(context, horizontal: 20),
-          children: [
-            Text(
-              "We'll email you a 6-digit code to confirm it's you. "
-              'The same account works on the website and in the app.',
-              style: context.text.bodyLarge?.copyWith(color: context.brand.muted),
+    return AuthLayout(
+      side: AuthSide.join,
+      title: 'Create Your Account',
+      subtitle: 'Get started with SportsHub today',
+      onBack: () => context.go(CoreRoutes.welcome),
+      children: [
+        Form(
+          key: _form,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _name,
+                  textCapitalization: TextCapitalization.words,
+                  autofillHints: const [AutofillHints.name],
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Full name *', prefixIcon: Icon(Icons.person_outline_rounded)),
+                  validator: (v) => Validators.required(v, 'Your name'),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Email address *', prefixIcon: Icon(Icons.mail_outline_rounded)),
+                  validator: Validators.email,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  autofillHints: const [AutofillHints.telephoneNumber],
+                  onFieldSubmitted: (_) => _submit(),
+                  decoration: const InputDecoration(
+                    labelText: 'Phone number',
+                    helperText: 'Optional: so your gym can reach you',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                  validator: Validators.phone,
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _name,
-              textCapitalization: TextCapitalization.words,
-              autofillHints: const [AutofillHints.name],
-              decoration: const InputDecoration(labelText: 'Full name *', prefixIcon: Icon(Icons.person_outline_rounded)),
-              validator: (v) => Validators.required(v, 'Your name'),
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(labelText: 'Email *', prefixIcon: Icon(Icons.email_outlined)),
-              validator: Validators.email,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              autofillHints: const [AutofillHints.telephoneNumber],
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
-                helperText: 'Optional: so your gym can reach you',
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-              validator: Validators.phone,
-            ),
-            if (_error != null) ...[const SizedBox(height: 12), _ErrorText(_error!)],
-            const SizedBox(height: 20),
-            FilledButton(onPressed: _busy ? null : _submit, child: _ButtonLabel(busy: _busy, text: 'Send code')),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => context.pushReplacement(
-                  widget.next == null ? CoreRoutes.signIn : CoreRoutes.signInFor(widget.next!)),
-              child: const Text('Already have an account? Sign in'),
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 16),
+        const AuthNote(
+          icon: Icons.mark_email_unread_outlined,
+          text: "We'll email you a 6-digit code to confirm it's you. "
+              'The same account works on the website and in the app.',
+        ),
+        if (_error != null) ...[const SizedBox(height: 14), AuthError(_error!)],
+        const SizedBox(height: 22),
+        AuthPrimaryButton(label: 'Register account', icon: Icons.person_add_alt_1_rounded, busy: _busy, onPressed: _submit),
+        const SizedBox(height: 14),
+        AuthSwitchLink(
+          question: 'Already have an account?',
+          action: 'Sign in here',
+          onPressed: () => context.pushReplacement(
+              widget.next == null ? CoreRoutes.signIn : CoreRoutes.signInFor(widget.next!)),
+        ),
+      ],
     );
   }
 }
@@ -395,51 +427,71 @@ class _VerifyCodeScreenState extends ConsumerState<VerifyCodeScreen> {
   Widget build(BuildContext context) {
     final pending = ref.watch(pendingCodeProvider);
     if (pending == null) {
-      return AppPage(
-        title: 'Enter your code',
-        body: EmptyState(
-          icon: Icons.mark_email_unread_outlined,
-          title: 'Start again',
-          message: 'Ask for a new code from the sign-in page.',
-          actionLabel: 'Go to sign in',
-          onAction: () => context.go(CoreRoutes.signIn),
-        ),
-      );
-    }
-    return AppPage(
-      title: 'Enter your code',
-      body: ListView(
-        padding: pagePadding(context, horizontal: 20),
+      return AuthLayout(
+        side: AuthSide.signIn,
+        title: 'Start again',
+        subtitle: 'Ask for a new code from the sign-in page.',
         children: [
-          Text('We emailed a 6-digit code to', style: context.text.bodyLarge),
-          Text(pending.email, style: context.text.titleMedium),
-          const SizedBox(height: 4),
-          Text("Can't see it? Check your spam folder.", style: context.text.bodySmall?.copyWith(color: context.brand.muted)),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _code,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            maxLength: 6,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: context.text.headlineMedium?.copyWith(letterSpacing: 12, fontWeight: FontWeight.w800),
-            decoration: const InputDecoration(counterText: '', hintText: '000000'),
-            onChanged: (v) {
-              if (v.length == 6 && !_busy) _verify(pending);
-            },
-          ),
-          if (_error != null) ...[const SizedBox(height: 12), _ErrorText(_error!)],
-          const SizedBox(height: 20),
-          FilledButton(onPressed: _busy ? null : () => _verify(pending), child: _ButtonLabel(busy: _busy, text: 'Continue')),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: _wait > 0 ? null : () => _resend(pending),
-            child: Text(_wait > 0 ? 'Send a new code in $_wait s' : 'Send a new code'),
+          AuthPrimaryButton(
+            label: 'Go to sign in',
+            icon: Icons.arrow_forward_rounded,
+            onPressed: () => context.go(CoreRoutes.signIn),
           ),
         ],
-      ),
+      );
+    }
+    return AuthLayout(
+      side: pending.purpose == CodePurpose.signUp ? AuthSide.join : AuthSide.signIn,
+      title: 'Check your email',
+      subtitle: 'We emailed a 6-digit code to',
+      children: [
+        Transform.translate(
+          offset: const Offset(0, -18),
+          child: Text(
+            pending.email,
+            style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: context.brand.accent),
+          ),
+        ),
+        TextField(
+          controller: _code,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          maxLength: 6,
+          autofillHints: const [AutofillHints.oneTimeCode],
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: context.text.headlineMedium?.copyWith(letterSpacing: 12, fontWeight: FontWeight.w800),
+          decoration: const InputDecoration(counterText: '', hintText: '000000'),
+          onChanged: (v) {
+            if (v.length == 6 && !_busy) _verify(pending);
+          },
+        ),
+        const SizedBox(height: 10),
+        Text(
+          "Can't see it? Check your spam folder.",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: context.brand.muted),
+        ),
+        if (_error != null) ...[const SizedBox(height: 14), AuthError(_error!)],
+        const SizedBox(height: 22),
+        AuthPrimaryButton(
+          label: 'Continue',
+          icon: Icons.arrow_forward_rounded,
+          busy: _busy,
+          onPressed: () => _verify(pending),
+        ),
+        const SizedBox(height: 10),
+        Center(
+          child: TextButton(
+            onPressed: _wait > 0 ? null : () => _resend(pending),
+            style: TextButton.styleFrom(
+              foregroundColor: context.brand.accent,
+              textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            child: Text(_wait > 0 ? 'Send a new code in $_wait s' : 'Send a new code'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -486,83 +538,58 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppPage(
-      title: 'Choose a password',
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: pagePadding(context, horizontal: 20),
-          children: [
-            Text(
-              'Use it to sign in next time, on the website or in the app.',
-              style: context.text.bodyLarge?.copyWith(color: context.brand.muted),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _password,
-              obscureText: _hide,
-              autofillHints: const [AutofillHints.newPassword],
-              decoration: InputDecoration(
-                labelText: 'New password',
-                helperText: 'At least 8 characters',
-                prefixIcon: const Icon(Icons.lock_outline_rounded),
-                suffixIcon: IconButton(
-                  tooltip: _hide ? 'Show password' : 'Hide password',
-                  icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                  onPressed: () => setState(() => _hide = !_hide),
-                ),
-              ),
-              validator: Validators.password,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _confirm,
-              obscureText: _hide,
-              decoration: const InputDecoration(labelText: 'Type it again', prefixIcon: Icon(Icons.lock_outline_rounded)),
-              validator: (v) => v != _password.text ? "The passwords don't match" : null,
-              onFieldSubmitted: (_) => _save(),
-            ),
-            if (_error != null) ...[const SizedBox(height: 12), _ErrorText(_error!)],
-            const SizedBox(height: 20),
-            FilledButton(onPressed: _busy ? null : _save, child: _ButtonLabel(busy: _busy, text: 'Save password')),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _busy ? null : () => context.go(widget.next ?? CoreRoutes.home),
-              child: const Text('Skip for now (sign in with email codes)'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorText extends StatelessWidget {
-  final String text;
-
-  const _ErrorText(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return AuthLayout(
+      side: AuthSide.join,
+      title: 'Set Account Password',
+      subtitle: 'Use it to sign in next time, on the website or in the app.',
       children: [
-        Icon(Icons.error_outline_rounded, color: context.brand.danger, size: 20),
-        const SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(color: context.brand.danger))),
+        Form(
+          key: _form,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _password,
+                  obscureText: _hide,
+                  autofillHints: const [AutofillHints.newPassword],
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: 'New password',
+                    helperText: 'At least 8 characters',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: _hide ? 'Show password' : 'Hide password',
+                      icon: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      onPressed: () => setState(() => _hide = !_hide),
+                    ),
+                  ),
+                  validator: Validators.password,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _confirm,
+                  obscureText: _hide,
+                  decoration: const InputDecoration(labelText: 'Type it again', prefixIcon: Icon(Icons.lock_outline_rounded)),
+                  validator: (v) => v != _password.text ? "The passwords don't match" : null,
+                  onFieldSubmitted: (_) => _save(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_error != null) ...[const SizedBox(height: 14), AuthError(_error!)],
+        const SizedBox(height: 22),
+        AuthPrimaryButton(label: 'Save password', icon: Icons.verified_user_outlined, busy: _busy, onPressed: _save),
+        const SizedBox(height: 10),
+        Center(
+          child: TextButton(
+            onPressed: _busy ? null : () => context.go(widget.next ?? CoreRoutes.home),
+            style: TextButton.styleFrom(foregroundColor: context.brand.muted),
+            child: const Text('Skip for now (sign in with email codes)'),
+          ),
+        ),
       ],
     );
   }
-}
-
-class _ButtonLabel extends StatelessWidget {
-  final bool busy;
-  final String text;
-
-  const _ButtonLabel({required this.busy, required this.text});
-
-  @override
-  Widget build(BuildContext context) => busy
-      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-      : Text(text);
 }

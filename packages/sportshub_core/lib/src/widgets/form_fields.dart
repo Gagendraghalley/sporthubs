@@ -93,7 +93,6 @@ Future<({Uint8List bytes, String contentType})?> pickPhoto(BuildContext context,
 }
 
 /// What kind of image [bytes] are, from their first bytes.
-@visibleForTesting
 String imageContentType(Uint8List bytes) {
   if (bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return 'image/png';
   if (bytes.length > 12 && String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP') return 'image/webp';

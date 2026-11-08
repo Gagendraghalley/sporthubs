@@ -3,14 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../theme/brand.dart';
 import '../utils/friendly_error.dart';
+import 'motion.dart';
 
-/// Loading, error (with Try again) and data, for an [AsyncValue].
+/// Loading (the shape of the page, shimmering), error (with Try again) and
+/// data, for an [AsyncValue]; the data fades in.
 class AsyncValueView<T> extends StatelessWidget {
   final AsyncValue<T> value;
   final Widget Function(T data) data;
   final VoidCallback? onRetry;
 
-  const AsyncValueView({super.key, required this.value, required this.data, this.onRetry});
+  /// While it loads: a page's shape unless given ([LoadingSkeleton.rows] for
+  /// a list inside a page).
+  final Widget? loading;
+
+  const AsyncValueView({super.key, required this.value, required this.data, this.onRetry, this.loading});
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +24,7 @@ class AsyncValueView<T> extends StatelessWidget {
       skipLoadingOnRefresh: true,
       skipLoadingOnReload: true,
       data: data,
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => loading ?? const LoadingSkeleton(),
       error: (e, _) => EmptyState(
         icon: Icons.cloud_off_rounded,
         title: 'Could not load this',
@@ -42,28 +48,62 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = context.brand.accent;
+    final blue = context.colors.tertiary;
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 36,
-              backgroundColor: context.colors.primary.withValues(alpha: 0.1),
-              child: Icon(icon, size: 36, color: context.colors.primary),
+      child: FadeSlideIn(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Two soft rings around the icon.
+                Container(
+                  width: 112,
+                  height: 112,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(colors: [blue.withValues(alpha: 0.12), blue.withValues(alpha: 0.02)]),
+                  ),
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [accent.withValues(alpha: 0.18), blue.withValues(alpha: 0.18)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Icon(icon, size: 34, color: context.colors.primary),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(title, style: context.text.titleMedium, textAlign: TextAlign.center),
+                if (message != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    message!,
+                    style: context.text.bodyMedium?.copyWith(color: context.brand.muted, height: 1.45),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(height: 22),
+                  FilledButton.icon(
+                    onPressed: onAction,
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    iconAlignment: IconAlignment.end,
+                    label: Text(actionLabel!),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(title, style: context.text.titleMedium, textAlign: TextAlign.center),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Text(message!, style: context.text.bodyMedium?.copyWith(color: context.brand.muted), textAlign: TextAlign.center),
-            ],
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 20),
-              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -125,10 +165,12 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
     );
+    // One that opens lifts under the mouse.
+    return onTap == null ? card : HoverLift(radius: 16, child: card);
   }
 }
 
@@ -146,20 +188,42 @@ class MenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = iconColor ?? context.colors.primary;
+    final end = trailing ?? (onTap == null ? null : const Icon(Icons.chevron_right_rounded));
+    // A Row, not a ListTile: a ListTile measures a wrapping subtitle as if it
+    // had the whole width, so in an equal-height ResponsiveGrid the card came
+    // out too short and the second line spilled out of it.
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        leading: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, color: color),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: subtitle == null ? null : Text(subtitle!),
-        trailing: trailing ?? (onTap == null ? null : const Icon(Icons.chevron_right_rounded)),
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: context.text.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(subtitle!, style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant)),
+                    ],
+                  ],
+                ),
+              ),
+              if (end != null) ...[const SizedBox(width: 12), end],
+            ],
+          ),
+        ),
       ),
     );
   }

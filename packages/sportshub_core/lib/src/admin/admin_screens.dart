@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../access/access.dart';
+import '../access/permission_gate.dart';
 import '../module/app_module_row.dart';
 import '../module/module_providers.dart';
-import '../profiles/profile.dart';
-import '../profiles/profile_repository.dart';
+import '../module/sportshub_module.dart';
 import '../router/core_routes.dart';
 import '../theme/brand.dart';
 import '../utils/formatters.dart';
@@ -14,56 +15,65 @@ import '../venues/venue_widgets.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/feedback.dart';
+import '../widgets/responsive.dart';
 import 'admin_repository.dart';
 
-/// Only for the SportsHub team (profiles.role = 'admin'); the database
-/// refuses anyone else whatever the app shows.
-class _AdminOnly extends ConsumerWidget {
-  final String title;
-  final Widget Function(BuildContext context) builder;
-
-  const _AdminOnly({required this.title, required this.builder});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return AsyncValueView<Profile?>(
-      value: ref.watch(myProfileProvider),
-      data: (p) => (p?.isAdmin ?? false)
-          ? builder(context)
-          : AppPage(title: title, body: const EmptyState(icon: Icons.lock_outline_rounded, title: 'For the SportsHub team only')),
-    );
-  }
-}
-
+/// SportsHub admin: what the signed-in member of the team may open, by
+/// their permissions (super admins see everything).
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(pendingVenuesProvider).valueOrNull?.length;
-    return _AdminOnly(
+    return PermissionGate(
       title: 'Admin',
-      builder: (context) => AppPage(
-        title: 'SportsHub admin',
-        body: ListView(
-          padding: pagePadding(context),
-          children: [
+      builder: (context, access) {
+        final pending = access.can(PlatformPermission.venuesVerify) ? ref.watch(pendingVenuesProvider).valueOrNull?.length : null;
+        final tiles = [
+          if (access.can(PlatformPermission.users))
+            MenuTile(
+              icon: Icons.manage_accounts_outlined,
+              title: 'Users',
+              subtitle: 'Make accounts, give roles, turn people off',
+              onTap: () => context.push(CoreRoutes.adminUsers),
+            ),
+          if (access.can(PlatformPermission.roles))
+            MenuTile(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'Roles and permissions',
+              subtitle: "The team's roles and the venue roles staff get",
+              onTap: () => context.push(CoreRoutes.adminRoles),
+            ),
+          if (access.can(PlatformPermission.masters))
+            MenuTile(
+              icon: Icons.map_outlined,
+              title: 'Master data',
+              subtitle: 'Dzongkhags, gewogs and villages',
+              onTap: () => context.push(CoreRoutes.adminMasters),
+            ),
+          if (access.can(PlatformPermission.venuesVerify))
             MenuTile(
               icon: Icons.verified_outlined,
               title: 'Venues to verify',
               subtitle: pending == null ? null : (pending == 0 ? 'None waiting' : '$pending waiting'),
               onTap: () => context.push(CoreRoutes.adminVenues),
             ),
-            const SizedBox(height: 10),
+          if (access.can(PlatformPermission.modules))
             MenuTile(
               icon: Icons.extension_outlined,
               title: 'Modules',
               subtitle: 'Turn gym membership and others on or off',
               onTap: () => context.push(CoreRoutes.adminModules),
             ),
-          ],
-        ),
-      ),
+        ];
+        return AppPage(
+          title: 'SportsHub admin',
+          body: ListView(
+            padding: pagePadding(context),
+            children: [ResponsiveGrid(minItemWidth: 360, maxColumns: 3, children: tiles)],
+          ),
+        );
+      },
     );
   }
 }
@@ -73,20 +83,26 @@ class AdminVenuesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return _AdminOnly(
+    return PermissionGate(
       title: 'Venues to verify',
-      builder: (context) => AppPage(
+      permission: PlatformPermission.venuesVerify,
+      builder: (context, _) => AppPage(
         title: 'Venues to verify',
         body: AsyncValueView<List<Venue>>(
           value: ref.watch(pendingVenuesProvider),
           onRetry: () => ref.invalidate(pendingVenuesProvider),
           data: (venues) => venues.isEmpty
               ? const EmptyState(icon: Icons.task_alt_rounded, title: 'All caught up', message: 'No venues are waiting.')
-              : ListView.separated(
+              : ListView(
                   padding: pagePadding(context),
-                  itemCount: venues.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) => _PendingVenueCard(venue: venues[i]),
+                  children: [
+                    ResponsiveGrid(
+                      minItemWidth: 420,
+                      maxColumns: 3,
+                      equalHeight: false,
+                      children: [for (final v in venues) _PendingVenueCard(venue: v)],
+                    ),
+                  ],
                 ),
         ),
       ),
@@ -165,9 +181,10 @@ class AdminModulesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final registered = {for (final m in ref.watch(registeredModulesProvider)) m.key: m};
-    return _AdminOnly(
+    return PermissionGate(
       title: 'Modules',
-      builder: (context) => AppPage(
+      permission: PlatformPermission.modules,
+      builder: (context, _) => AppPage(
         title: 'Modules',
         body: AsyncValueView<List<AppModuleRow>>(
           value: ref.watch(appModulesProvider),
@@ -182,32 +199,47 @@ class AdminModulesScreen extends ConsumerWidget {
                   style: TextStyle(color: context.brand.muted),
                 ),
               ),
-              for (final row in rows)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Card(
-                    child: SwitchListTile(
-                      secondary: Icon(registered[row.key]?.icon ?? Icons.extension_outlined),
-                      title: Text(row.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: Text(registered.containsKey(row.key)
-                          ? registered[row.key]!.description
-                          : 'Not in this version of the app'),
-                      value: row.isEnabled,
-                      onChanged: (on) async {
-                        final ok = await runAction(
-                          context,
-                          () => ref.read(adminRepositoryProvider).setModuleEnabled(row.key, on),
-                          success: '${row.name} is ${on ? 'on' : 'off'}',
-                        );
-                        if (ok) ref.invalidate(appModulesProvider);
-                      },
-                    ),
-                  ),
-                ),
+              ResponsiveGrid(
+                minItemWidth: 340,
+                maxColumns: 3,
+                children: [
+                  for (final row in rows) _ModuleTile(row: row, module: registered[row.key]),
+                ],
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One module with its switch; tapping anywhere on the card flips it.
+/// [module] is null for a module this version of the app doesn't have.
+class _ModuleTile extends ConsumerWidget {
+  final AppModuleRow row;
+  final SportsHubModule? module;
+
+  const _ModuleTile({required this.row, required this.module});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    Future<void> toggle(bool on) async {
+      final ok = await runAction(
+        context,
+        () => ref.read(adminRepositoryProvider).setModuleEnabled(row.key, on),
+        success: '${row.name} is ${on ? 'on' : 'off'}',
+      );
+      if (ok) ref.invalidate(appModulesProvider);
+    }
+
+    return MenuTile(
+      icon: module?.icon ?? Icons.extension_outlined,
+      iconColor: module?.color ?? context.brand.muted,
+      title: row.name,
+      subtitle: module?.description ?? 'Not in this version of the app',
+      trailing: Switch(value: row.isEnabled, onChanged: toggle),
+      onTap: () => toggle(!row.isEnabled),
     );
   }
 }

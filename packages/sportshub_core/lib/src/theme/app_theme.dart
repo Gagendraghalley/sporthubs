@@ -37,8 +37,19 @@ abstract final class AppTheme {
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: colors,
+      fontFamily: brandFont,
       scaffoldBackgroundColor: brand.background,
       extensions: [brand],
+      // Pages fade in and rise a little, on every platform: moving between
+      // services and pages feels like one app.
+      pageTransitionsTheme: const PageTransitionsTheme(builders: {
+        TargetPlatform.android: SoftRiseTransitionsBuilder(),
+        TargetPlatform.iOS: SoftRiseTransitionsBuilder(),
+        TargetPlatform.macOS: SoftRiseTransitionsBuilder(),
+        TargetPlatform.windows: SoftRiseTransitionsBuilder(),
+        TargetPlatform.linux: SoftRiseTransitionsBuilder(),
+        TargetPlatform.fuchsia: SoftRiseTransitionsBuilder(),
+      }),
     );
     return base.copyWith(
       textTheme: base.textTheme.copyWith(
@@ -66,7 +77,7 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size(64, 52),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -74,7 +85,7 @@ abstract final class AppTheme {
           minimumSize: const Size(64, 52),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           side: BorderSide(color: brand.glassBorder),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -103,8 +114,46 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
-      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        contentTextStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w600, color: Colors.white),
+      ),
+      tooltipTheme: TooltipThemeData(
+        waitDuration: const Duration(milliseconds: 350),
+        decoration: BoxDecoration(color: BrandColors.night.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(8)),
+        textStyle: const TextStyle(fontFamily: brandFont, color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: brand.glassBorder)),
+      ),
       dividerTheme: DividerThemeData(color: brand.glassBorder, space: 1),
+    );
+  }
+}
+
+/// A page comes in by fading and rising 12 pixels; the page under it stays
+/// put. Short (260 ms), so it reads as smooth rather than slow.
+class SoftRiseTransitionsBuilder extends PageTransitionsBuilder {
+  const SoftRiseTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 260);
+
+  @override
+  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 0.015), end: Offset.zero).animate(curved),
+        child: child,
+      ),
     );
   }
 }

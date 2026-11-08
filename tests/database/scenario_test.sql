@@ -81,12 +81,12 @@ select public.gym_save_plan(:'venue_id', null, 'Monthly', 'All equipment', 30, 1
 select public.gym_save_plan(:'venue_id', null, 'Old plan', null, 7, 400, false) as hidden_plan_id \gset
 select public.add_venue_staff(:'venue_id', 'STAFF@gym.bt', 'staff');
 select t.fails(format($$select public.add_venue_staff(%L, 'nobody@x.bt', 'staff')$$, :'venue_id'), 'No SportsHub account');
-select t.fails(format($$select public.add_venue_staff(%L, 'member@x.bt', 'owner')$$, :'venue_id'), 'managers or staff');
+select t.fails(format($$select public.add_venue_staff(%L, 'member@x.bt', 'owner')$$, :'venue_id'), 'make someone an owner');
 select t.fails(format($$select public.remove_venue_staff(%L, '00000000-0000-0000-0000-00000000000b')$$, :'venue_id'), 'owner can''t be removed');
 select t.as_user('00000000-0000-0000-0000-00000000000c');
-select t.fails(format($$select public.gym_save_plan(%L, null, 'Cheap', null, 30, 1, true)$$, :'venue_id'), 'owner and managers');
-select t.fails(format($$select public.add_venue_staff(%L, 'member2@x.bt', 'staff')$$, :'venue_id'), 'Only the venue''s owner');
-select t.fails(format($$select public.update_venue(%L, '{"name":"Mine now"}')$$, :'venue_id'), 'owner and managers');
+select t.fails(format($$select public.gym_save_plan(%L, null, 'Cheap', null, 30, 1, true)$$, :'venue_id'), 'manage plans');
+select t.fails(format($$select public.add_venue_staff(%L, 'member2@x.bt', 'staff')$$, :'venue_id'), 'manage this venue''s staff');
+select t.fails(format($$select public.update_venue(%L, '{"name":"Mine now"}')$$, :'venue_id'), 'can edit this venue');
 select t.eq((select count(*) from public.profiles)::int, 2, 'staff see themselves and their colleague (the owner)');
 select t.eq((select count(*) from public.gym_plans)::int, 2, 'staff see every plan of their gym');
 select t.eq((select count(*) from public.notifications where title like 'You were added%')::int, 1, 'staff are told they were added');

@@ -17,9 +17,16 @@ Future<void> openExternal(BuildContext context, Uri url) async {
 /// Calls [phone] ('+97517123456').
 Future<void> callPhone(BuildContext context, String phone) => openExternal(context, Uri(scheme: 'tel', path: phone));
 
-/// WhatsApp chat with [phone].
-Future<void> openWhatsApp(BuildContext context, String phone) =>
-    openExternal(context, Uri.https('wa.me', '/${phone.replaceAll(RegExp(r'[^0-9]'), '')}'));
+/// WhatsApp chat with [phone], with [message] typed in, ready to send.
+Future<void> openWhatsApp(BuildContext context, String phone, {String? message}) =>
+    openExternal(context, whatsAppLink(phone, message: message));
+
+/// `wa.me/<the number's digits>`, with `?text=` when there's a [message].
+Uri whatsAppLink(String phone, {String? message}) => Uri.https(
+      'wa.me',
+      '/${phone.replaceAll(RegExp(r'[^0-9]'), '')}',
+      message == null ? null : {'text': message},
+    );
 
 /// Google Maps directions to a place.
 Future<void> openDirections(BuildContext context, double latitude, double longitude) => openExternal(

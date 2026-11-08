@@ -1,6 +1,7 @@
-/// profiles.role: everyone is a user; admins are the SportsHub team, who
-/// verify venues and turn modules on and off. Running a venue is not a
-/// platform role: it's per venue (venue_staff).
+/// profiles.role: everyone is a user; admins are SportsHub's super admins,
+/// who can do everything. The rest of the SportsHub team get roles with the
+/// permissions they need (user_roles, PlatformAccess). Running a venue is
+/// not a platform role: it's per venue (venue_staff).
 abstract final class PlatformRole {
   static const user = 'user';
   static const admin = 'admin';
@@ -19,6 +20,10 @@ class Profile {
   /// ('4K7P9Q'). Shown under the member's QR code.
   final String memberCode;
 
+  /// False when someone turned the account off: it keeps its memberships but
+  /// none of its roles count.
+  final bool isActive;
+
   const Profile({
     required this.id,
     required this.fullName,
@@ -27,8 +32,10 @@ class Profile {
     this.email,
     this.phone,
     this.dzongkhag,
+    this.isActive = true,
   });
 
+  /// A super admin (who can do everything).
   bool get isAdmin => role == PlatformRole.admin;
 
   String get displayName => fullName.trim().isEmpty ? (email ?? 'SportsHub member') : fullName.trim();
@@ -41,5 +48,6 @@ class Profile {
         dzongkhag: json['dzongkhag'] as String?,
         role: json['role'] as String? ?? PlatformRole.user,
         memberCode: json['member_code'] as String? ?? '',
+        isActive: json['is_active'] as bool? ?? true,
       );
 }

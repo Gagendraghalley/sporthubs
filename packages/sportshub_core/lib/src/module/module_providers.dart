@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../profiles/profile_repository.dart';
+import '../access/access.dart';
+import '../access/access_repository.dart';
 import '../supabase/supabase_provider.dart';
 import 'app_module_row.dart';
 import 'sportshub_module.dart';
@@ -17,12 +18,12 @@ final moduleRepositoryProvider = Provider<ModuleRepository>((ref) => ModuleRepos
 final appModulesProvider = FutureProvider<List<AppModuleRow>>((ref) => ref.watch(moduleRepositoryProvider).list());
 
 /// The modules to show, in app_modules' order: those turned on, and, for
-/// admins, those turned off too (so they can try one before it goes live).
-/// A module with no app_modules row stays hidden.
+/// whoever turns modules on and off, those turned off too (so they can try
+/// one before it goes live). A module with no app_modules row stays hidden.
 final enabledModulesProvider = FutureProvider<List<SportsHubModule>>((ref) async {
   final rows = await ref.watch(appModulesProvider.future);
-  final profile = await ref.watch(myProfileProvider.future);
-  return visibleModules(ref.watch(registeredModulesProvider), rows, isAdmin: profile?.isAdmin ?? false);
+  final access = await ref.watch(myAccessProvider.future);
+  return visibleModules(ref.watch(registeredModulesProvider), rows, isAdmin: access.can(PlatformPermission.modules));
 });
 
 /// The module that runs venues of [type], among the enabled ones.

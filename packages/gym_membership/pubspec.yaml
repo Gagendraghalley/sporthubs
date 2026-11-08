@@ -16,6 +16,8 @@ dependencies:
   supabase_flutter: ^2.8.0
   mobile_scanner: ^7.2.0 # the gym staff's Check-in scans members' QR codes
   qr_flutter: ^4.1.0 # the member's card on My gym
+  camera: ^0.11.4 # the front desk snaps a registering member's photo with the webcam
+  share_plus: ^12.0.2 # sends a member's QR card (share sheet on phones, a download on computers)
   sportshub_core:
     path: ../sportshub_core
 
@@ -25,20 +27,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter:
-  # The Welcome page's photos (assets/PHOTO_CREDITS.md) and its font,
-  # used as 'packages/gym_membership/PlusJakartaSans'.
+  # The Welcome page's photos (assets/PHOTO_CREDITS.md). Its font is the
+  # platform's, in sportshub_core.
   assets:
     - assets/welcome/
-  fonts:
-    # Plus Jakarta Sans (SIL Open Font License, assets/fonts/OFL.txt).
-    - family: PlusJakartaSans
-      fonts:
-        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
-        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
-          weight: 800

@@ -142,10 +142,9 @@ void main() {
     expect(s.byMethod, {PaymentMethod.mbob: 1900, PaymentMethod.cash: 1500});
   });
 
-  test('VenueRole', () {
-    expect(VenueRole.canManage(VenueRole.manager), isTrue);
-    expect(VenueRole.canManage(VenueRole.staff), isFalse);
-    expect(VenueRole.canEditStaff(VenueRole.manager), isFalse);
-    expect(VenueRole.canEditStaff(VenueRole.admin), isTrue);
+  test('VenueRole names', () {
+    expect(VenueRole.label(VenueRole.staff), 'Front desk');
+    expect(VenueRole.label(VenueRole.trainer), 'Trainer');
+    expect(VenueRole.label('cashier'), 'cashier');
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../access/access.dart';
 import '../auth/auth_repository.dart';
 import '../module/module_providers.dart';
 import '../module/sportshub_module.dart';
@@ -13,6 +14,7 @@ import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/loader.dart';
 import 'venue.dart';
 import 'venue_repository.dart';
 import 'venue_widgets.dart';
@@ -169,10 +171,10 @@ class _VenueFormScreenState extends ConsumerState<VenueFormScreen> {
     return AsyncValueView<VenueAccess?>(
       value: ref.watch(venueAccessProvider(widget.venueId!)),
       data: (access) {
-        if (access == null || !access.canManage) {
+        if (access == null || !access.can(VenuePermission.edit)) {
           return const AppPage(
             title: 'Edit venue',
-            body: EmptyState(icon: Icons.lock_outline_rounded, title: 'Only its owner and managers can edit this venue'),
+            body: EmptyState(icon: Icons.lock_outline_rounded, title: "Your role here can't edit this venue"),
           );
         }
         _fill(access.venue);
@@ -344,7 +346,7 @@ class _PhotoEditorState extends ConsumerState<_PhotoEditor> {
                     ),
                     child: Center(
                       child: _busy
-                          ? const CircularProgressIndicator()
+                          ? const SportsHubLoader(size: 36, semanticsLabel: 'Uploading')
                           : Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -405,7 +407,7 @@ class MyVenuesScreen extends ConsumerWidget {
                         children: [
                           VerificationChip(status: v.venue.verificationStatus),
                           const SizedBox(height: 4),
-                          Text(VenueRole.label(v.role), style: TextStyle(color: context.brand.muted)),
+                          Text(v.roleName, style: TextStyle(color: context.brand.muted)),
                         ],
                       ),
                     );
@@ -438,6 +440,14 @@ class VenueManageScreen extends ConsumerWidget {
           }
           final venue = a.venue;
           final module = ref.watch(moduleForVenueTypeProvider(venue.type));
+          // A module with its own console (a gym's dashboard) runs the venue
+          // there: this page would only repeat it.
+          if (module?.managerHomeRoute(venue) case final home?) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go(home);
+            });
+            return const Center(child: SportsHubLoader());
+          }
           return RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(myVenuesProvider);
@@ -457,7 +467,7 @@ class VenueManageScreen extends ConsumerWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text('${venue.place} · You: ${VenueRole.label(a.role)}', style: TextStyle(color: context.brand.muted)),
+                      Text('${venue.place} · You: ${a.roleName}', style: TextStyle(color: context.brand.muted)),
                       if (venue.verificationStatus == VerificationStatus.pending) ...[
                         const SizedBox(height: 10),
                         const Text(
@@ -483,19 +493,19 @@ class VenueManageScreen extends ConsumerWidget {
                     child: Text('This part of SportsHub is turned off for now.'),
                   )
                 else ...[
-                  if (module.buildManagerSection(context, venue, a.role) case final section?) ...[
+                  if (module.buildManagerSection(context, venue, a) case final section?) ...[
                     const SizedBox(height: 12),
                     section,
                   ],
                   SectionTitle(module.name),
-                  for (final item in module.managerMenuItems(venue, a.role))
+                  for (final item in module.managerMenuItems(venue, a))
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: MenuTile(icon: item.icon, title: item.title, subtitle: item.subtitle, onTap: () => item.open(context)),
                     ),
                 ],
                 const SectionTitle('Venue'),
-                if (a.canManage)
+                if (a.can(VenuePermission.edit))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: MenuTile(
@@ -508,7 +518,7 @@ class VenueManageScreen extends ConsumerWidget {
                 MenuTile(
                   icon: Icons.badge_outlined,
                   title: 'Staff',
-                  subtitle: a.canEditStaff ? 'Add managers and front-desk staff' : 'Who runs this venue',
+                  subtitle: a.can(VenuePermission.staff) ? 'Add staff, make their accounts, choose their roles' : 'Who runs this venue',
                   onTap: () => context.push(CoreRoutes.venueStaffFor(venue.id)),
                 ),
               ],
@@ -520,135 +530,3 @@ class VenueManageScreen extends ConsumerWidget {
   }
 }
 
-/// Who runs a venue; its owner adds and removes them.
-class VenueStaffScreen extends ConsumerWidget {
-  final String venueId;
-
-  const VenueStaffScreen({super.key, required this.venueId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final access = ref.watch(venueAccessProvider(venueId)).valueOrNull;
-    final canEdit = access?.canEditStaff ?? false;
-    final me = ref.watch(currentUserIdProvider);
-    return AppPage(
-      title: 'Staff',
-      floatingActionButton: canEdit
-          ? FloatingActionButton.extended(
-              onPressed: () => _add(context, ref),
-              icon: const Icon(Icons.person_add_alt_1_rounded),
-              label: const Text('Add staff'),
-            )
-          : null,
-      body: AsyncValueView<List<VenueStaffMember>>(
-        value: ref.watch(venueStaffProvider(venueId)),
-        onRetry: () => ref.invalidate(venueStaffProvider(venueId)),
-        data: (staff) => ListView(
-          padding: pagePadding(context, bottom: 96),
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 0, 4, 12),
-              child: Text(
-                'Managers can change details, plans and prices and see income. Staff check members in '
-                'and confirm payments. Everyone needs a SportsHub account first.',
-              ),
-            ),
-            for (final s in staff)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: MenuTile(
-                  icon: s.role == VenueRole.owner ? Icons.workspace_premium_outlined : Icons.badge_outlined,
-                  title: s.userId == me ? '${s.name} (you)' : s.name,
-                  subtitle: [VenueRole.label(s.role), if (s.email != null) s.email!].join(' · '),
-                  trailing: canEdit && s.role != VenueRole.owner
-                      ? IconButton(
-                          tooltip: 'Remove',
-                          icon: const Icon(Icons.person_remove_outlined),
-                          onPressed: () => _remove(context, ref, s),
-                        )
-                      : null,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _add(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<({String email, String role})>(context: context, builder: (_) => const _AddStaffDialog());
-    if (result == null || !context.mounted) return;
-    final ok = await runAction(
-      context,
-      () => ref.read(venueRepositoryProvider).addStaff(venueId, result.email, result.role),
-      success: 'Added',
-    );
-    if (ok) ref.invalidate(venueStaffProvider(venueId));
-  }
-
-  Future<void> _remove(BuildContext context, WidgetRef ref, VenueStaffMember s) async {
-    final sure = await confirmAction(context, title: 'Remove ${s.name}?', confirmLabel: 'Remove', destructive: true);
-    if (!sure || !context.mounted) return;
-    final ok = await runAction(context, () => ref.read(venueRepositoryProvider).removeStaff(venueId, s.userId));
-    if (ok) ref.invalidate(venueStaffProvider(venueId));
-  }
-}
-
-class _AddStaffDialog extends StatefulWidget {
-  const _AddStaffDialog();
-
-  @override
-  State<_AddStaffDialog> createState() => _AddStaffDialogState();
-}
-
-class _AddStaffDialogState extends State<_AddStaffDialog> {
-  final _form = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  String _role = VenueRole.staff;
-
-  @override
-  void dispose() {
-    _email.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add staff'),
-      content: Form(
-        key: _form,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _email,
-              autofocus: true,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Their SportsHub email'),
-              validator: Validators.email,
-            ),
-            const SizedBox(height: 14),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: VenueRole.staff, label: Text('Staff')),
-                ButtonSegment(value: VenueRole.manager, label: Text('Manager')),
-              ],
-              selected: {_role},
-              onSelectionChanged: (s) => setState(() => _role = s.first),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: () {
-            if (_form.currentState!.validate()) Navigator.pop(context, (email: _email.text.trim(), role: _role));
-          },
-          child: const Text('Add'),
-        ),
-      ],
-    );
-  }
-}

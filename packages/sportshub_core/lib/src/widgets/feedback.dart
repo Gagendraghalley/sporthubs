@@ -10,13 +10,31 @@ Future<bool> runAction(BuildContext context, Future<void> Function() action, {St
   final danger = context.brand.danger;
   try {
     await action();
-    if (success != null) messenger.showSnackBar(SnackBar(content: Text(success)));
+    if (success != null) messenger.showSnackBar(feedbackBar(success));
     return true;
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: danger));
+    messenger.showSnackBar(feedbackBar(friendlyError(e), problem: true, color: danger));
     return false;
   }
 }
+
+/// Tells the person how something went, at the foot of the page: a tick (or
+/// a warning, for a [problem]) beside [message]. The theme slides it in.
+SnackBar feedbackBar(String message, {bool problem = false, Color? color}) => SnackBar(
+      backgroundColor: problem ? (color ?? BrandColors.red) : BrandColors.navy,
+      content: Row(
+        children: [
+          Icon(problem ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+              color: problem ? Colors.white : const Color(0xFF4CC983), size: 22),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+        ],
+      ),
+    );
+
+/// Shows [feedbackBar] on [context]'s page.
+void showFeedback(BuildContext context, String message, {bool problem = false}) =>
+    ScaffoldMessenger.of(context).showSnackBar(feedbackBar(message, problem: problem, color: context.brand.danger));
 
 /// Asks before doing something; true when they confirm.
 Future<bool> confirmAction(

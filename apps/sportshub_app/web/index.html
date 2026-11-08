@@ -19,6 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="SportsHub: find a gym, join and check in with your phone, and book sports grounds in Bhutan.">
+  <meta name="theme-color" content="#0C2152">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,8 +32,77 @@
 
   <title>SportsHub · Play, Train, Book, Connect</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    The splash, shown until Flutter draws its first frame: the same logo,
+    size and place as SportsHubSplash
+    (packages/sportshub_core/lib/src/widgets/splash.dart), so the handover
+    doesn't jump. Change one, change the other.
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #071229; }
+    #splash {
+      --logo: 240px;
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #0C2152 0%, #071229 100%);
+      transition: opacity .25s ease;
+    }
+    @media (min-width: 600px) and (min-height: 600px) {
+      #splash { --logo: 320px; }
+    }
+    #splash img {
+      display: block;
+      width: var(--logo);
+      height: calc(var(--logo) * 482 / 900);
+    }
+    /* 36px under the logo's foot: an orange streak along a faint track. */
+    #splash .bar {
+      position: absolute;
+      top: calc(50% + var(--logo) * 241 / 900 + 36px);
+      left: calc(50% - var(--logo) / 4);
+      width: calc(var(--logo) / 2);
+      height: 4px;
+      overflow: hidden;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, .12);
+    }
+    #splash .bar::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 40%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, rgba(255, 138, 61, 0), #FF8A3D 40%, #F86A0C);
+      animation: splash-run 1.4s cubic-bezier(.645, .045, .355, 1) infinite;
+    }
+    @keyframes splash-run {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(250%); }
+    }
+    /* Flutter's own splash has its bar: hide this one as the page fades. */
+    #splash.gone { opacity: 0; pointer-events: none; }
+    #splash.gone .bar { visibility: hidden; }
+  </style>
 </head>
 <body>
+  <div id="splash" role="progressbar" aria-label="Loading SportsHub">
+    <img src="splash/sportshub_logo.png" alt="SportsHub">
+    <div class="bar"></div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('splash');
+      if (!splash) return;
+      splash.classList.add('gone');
+      setTimeout(function () { splash.remove(); }, 300);
+    }, { once: true });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

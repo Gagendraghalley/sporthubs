@@ -78,4 +78,4 @@ fi
 echo
 echo "Done. Next:"
 echo "  - Make yourself an admin (README, 'Make yourself an admin')."
-echo "  - Run the app: cd apps/sportshub_app && flutter run -d chrome --web-port 8080 --dart-define-from-file=env.json"
+echo "  - Run the website: ./scripts/run_web.sh   (http://localhost:3000)"

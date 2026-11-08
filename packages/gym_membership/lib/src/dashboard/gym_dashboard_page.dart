@@ -6,15 +6,15 @@ import 'package:sportshub_core/sportshub_core.dart';
 import '../data/dashboard_data.dart';
 import '../data/gym_models.dart';
 import '../data/gym_repository.dart';
+import '../gym_permissions.dart';
 import '../gym_routes.dart';
-import '../widgets/console_kit.dart';
 import '../widgets/gym_type.dart';
 import '../widgets/gym_widgets.dart';
 
 /// Where a gym's owner, managers and front desk land: today's numbers,
-/// revenue (owners and managers: payments are theirs to see), where members
-/// stand, what to do next, what just happened and whose membership ends
-/// soon. A navy menu down the side of a wide window; a drawer on a phone.
+/// revenue (for those who may see income), where members stand, what just
+/// happened and whose package ends soon. In the app's frame: the gym's
+/// pages are in its menu.
 ///
 /// Every number comes from the gym's own records.
 class GymDashboardPage extends StatelessWidget {
@@ -34,9 +34,7 @@ class GymDashboardPage extends StatelessWidget {
 
 const _weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-/// Widths at which the side menu shows, and the content goes side by side.
-const _sideMenuFrom = 1100.0;
-const _sideMenuWidth = 260.0;
+
 
 class _Console extends ConsumerStatefulWidget {
   final VenueAccess access;
@@ -62,42 +60,29 @@ class _ConsoleState extends ConsumerState<_Console> {
 
   Future<void> _refresh() async {
     refreshGym(ref, _id);
-    if (widget.access.canManage) ref.invalidate(venuePaymentsProvider(_paymentsQuery(BhutanTime.today())));
+    if (widget.access.can(VenuePermission.income)) ref.invalidate(venuePaymentsProvider(_paymentsQuery(BhutanTime.today())));
     await ref.read(gymDashboardProvider(_id).future);
   }
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= _sideMenuFrom;
-    return Scaffold(
-      backgroundColor: context.brand.background,
-      drawer: wide ? null : Drawer(width: 280, child: _SideNav(access: widget.access, inDrawer: true)),
-      body: Row(
-        children: [
-          if (wide) SizedBox(width: _sideMenuWidth, child: _SideNav(access: widget.access, inDrawer: false)),
-          Expanded(
-            child: Column(
-              children: [
-                _TopBar(access: widget.access, showMenu: !wide),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _refresh,
-                    child: AsyncValueView<List<GymSubscription>>(
-                      value: ref.watch(gymSubscriptionsProvider(_id)),
-                      onRetry: () => ref.invalidate(gymSubscriptionsProvider(_id)),
-                      data: (subs) => AsyncValueView<GymDashboard>(
-                        value: ref.watch(gymDashboardProvider(_id)),
-                        onRetry: () => ref.invalidate(gymDashboardProvider(_id)),
-                        data: (dash) => _content(context, subs, dash, width - (wide ? _sideMenuWidth : 0)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+    return AppPage(
+      title: widget.access.venue.name,
+      maxWidth: double.infinity,
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: AsyncValueView<List<GymSubscription>>(
+          value: ref.watch(gymSubscriptionsProvider(_id)),
+          onRetry: () => ref.invalidate(gymSubscriptionsProvider(_id)),
+          data: (subs) => AsyncValueView<GymDashboard>(
+            value: ref.watch(gymDashboardProvider(_id)),
+            onRetry: () => ref.invalidate(gymDashboardProvider(_id)),
+            // The room the page really has, the menu folding or not.
+            data: (dash) => LayoutBuilder(
+              builder: (context, constraints) => _content(context, subs, dash, constraints.maxWidth),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -111,15 +96,83 @@ class _ConsoleState extends ConsumerState<_Console> {
     final standing = memberStanding(subs, today);
     final ending = endingWithin(subs, today, 30);
     final checkIns = ref.watch(gymRecentCheckInsProvider(_id)).valueOrNull ?? const <GymCheckIn>[];
-    final payments = access.canManage ? ref.watch(venuePaymentsProvider(_paymentsQuery(today))) : null;
+    final payments = access.can(VenuePermission.income) ? ref.watch(venuePaymentsProvider(_paymentsQuery(today))) : null;
     final profile = ref.watch(myProfileProvider).valueOrNull;
+    final registered = ref.watch(gymMembersProvider(_id)).valueOrNull;
+    final newThisMonth =
+        registered?.where((m) => m.joinedOn.year == today.year && m.joinedOn.month == today.month).length ?? 0;
     final ink = ConsoleInk.of(context);
+
+    // Getting started: what's left to do, from the gym's own records; gone
+    // once it's all done (or nothing left is theirs to do).
+    final plans = access.can(GymPermission.plans) ? ref.watch(gymPlansProvider((venueId: _id, all: true))).valueOrNull : null;
+    final staff = access.can(VenuePermission.staff) ? ref.watch(venueStaffProvider(_id)).valueOrNull : null;
+    final steps = [
+      if (plans != null)
+        _Step(
+          done: plans.isNotEmpty,
+          title: 'Create your first membership package',
+          text: 'What the front desk sells, and its price.',
+          action: 'Add a package',
+          route: GymRoutes.newPlanFor(_id),
+        ),
+      if (registered != null && access.can(GymPermission.register))
+        _Step(
+          done: registered.isNotEmpty,
+          title: 'Register your first member',
+          text: 'Their details, a photo and a package; they get a QR card.',
+          action: 'Register a member',
+          route: GymRoutes.registerMemberFor(_id),
+        ),
+      if (staff != null)
+        _Step(
+          done: staff.length > 1,
+          title: 'Add your gym staff',
+          text: 'The front desk and trainers, each with their own role.',
+          action: 'Add staff',
+          route: CoreRoutes.venueStaffFor(_id),
+        ),
+    ];
+    final setup = steps.isEmpty || steps.every((s) => s.done) ? null : _SetupCard(steps: steps);
+
+    // What needs the desk's attention now.
+    final soon = endingWithin(subs, today, 3);
+    final noPackage = registered == null
+        ? 0
+        : registered.where((m) => !subs.any((s) => s.gymMemberId == m.id && s.status != SubscriptionStatus.cancelled)).length;
+    final alerts = [
+      if (!venue.isVerified)
+        _Alert(
+          icon: Icons.hourglass_top_rounded,
+          color: context.brand.warning,
+          text: 'SportsHub is still checking ${venue.name}. You can set it up meanwhile; '
+              'it shows on the public gym list once verified.',
+        ),
+      if (soon.isNotEmpty)
+        _Alert(
+          icon: Icons.alarm_rounded,
+          color: context.brand.danger,
+          text: soon.length == 1
+              ? "${soon.first.memberDisplayName}'s package ends ${soon.first.daysLeftOn(today) == 1 ? 'today' : 'in ${soon.first.daysLeftOn(today)} days'}"
+              : '${soon.length} packages end in the next 3 days',
+          onTap: () => context.push(GymRoutes.membersFor(_id)),
+        ),
+      if (noPackage > 0 && access.can(GymPermission.payments))
+        _Alert(
+          icon: Icons.person_off_outlined,
+          color: BrandColors.blue,
+          text: noPackage == 1 ? '1 member has no package yet' : '$noPackage members have no package yet',
+          onTap: () => context.push(GymRoutes.membersFor(_id)),
+        ),
+    ];
+
 
     final kpis = [
       ConsoleKpi(
         icon: Icons.groups_rounded,
         color: BrandColors.blue,
         value: '${standing.members}',
+        count: standing.members,
         label: 'Total members',
         note: '${standing.active} active now',
         onTap: () => context.push(GymRoutes.membersFor(_id)),
@@ -128,6 +181,7 @@ class _ConsoleState extends ConsumerState<_Console> {
         icon: Icons.qr_code_scanner_rounded,
         color: BrandColors.green,
         value: '${dash.checkInsToday}',
+        count: dash.checkInsToday,
         label: 'Check-ins today',
         note: 'Since midnight, Bhutan time',
         onTap: () => context.push(GymRoutes.checkInFor(_id)),
@@ -137,23 +191,27 @@ class _ConsoleState extends ConsumerState<_Console> {
           icon: Icons.payments_outlined,
           color: BrandColors.orange,
           value: formatNu(dash.incomeThisMonth!),
+          count: dash.incomeThisMonth,
+          format: (v) => formatNu(v.round()),
           label: 'Income this month',
           note: formatMonth(today),
           onTap: () => context.push(GymRoutes.incomeFor(_id)),
         )
       else
         ConsoleKpi(
-          icon: Icons.inbox_outlined,
+          icon: Icons.person_add_alt_1_rounded,
           color: BrandColors.amber,
-          value: '${dash.pending}',
-          label: 'Requests waiting',
-          note: 'Confirm their payments',
-          onTap: () => context.push(GymRoutes.requestsFor(_id)),
+          value: '${registered?.length ?? '–'}',
+          count: registered?.length,
+          label: 'Registered members',
+          note: '$newThisMonth joined this month',
+          onTap: () => context.push(GymRoutes.membersFor(_id)),
         ),
       ConsoleKpi(
         icon: Icons.event_busy_rounded,
         color: const Color(0xFF7C4DFF),
         value: '${ending.length}',
+        count: ending.length,
         label: 'Ending in 30 days',
         note: ending.isEmpty
             ? 'No renewals due'
@@ -163,6 +221,9 @@ class _ConsoleState extends ConsumerState<_Console> {
       ),
     ];
 
+    // Revenue and the members' status side by side (each filling the row's
+    // height) on a wide page; one under the other otherwise.
+    final sideBySideCards = contentWidth >= 900 && payments != null;
     final revenue = payments == null
         ? null
         : _RevenueCard(
@@ -170,16 +231,16 @@ class _ConsoleState extends ConsumerState<_Console> {
             range: _range,
             today: today,
             pickerInHeader: contentWidth >= 640,
-            fill: contentWidth >= 1000,
+            fill: sideBySideCards,
             onRange: (r) => setState(() => _range = r),
           );
-    final status = _StatusCard(standing: standing, waiting: dash.pending, venueId: _id, fill: contentWidth >= 640);
-    final actions = _ActionsCard(access: access, pending: dash.pending, fill: contentWidth >= 640);
+    final status = _StatusCard(standing: standing, fill: sideBySideCards);
     final activity = _ActivityCard(
       activity: recentActivity(subs: subs, checkIns: checkIns, payments: payments?.valueOrNull),
       today: today,
     );
     final endingCard = _EndingCard(ending: ending, today: today, venueId: _id);
+    final checkInCard = _CheckInsCard(checkIns: checkIns, today: today, venueId: _id);
 
     Widget sideBySide(List<(int, Widget)> cards, {double? height}) {
       final row = Row(
@@ -195,7 +256,7 @@ class _ConsoleState extends ConsumerState<_Console> {
     }
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(pad, 26, pad, 40),
+      padding: pagePadding(context, horizontal: pad, top: 18, bottom: 40),
       children: [
         Text(
           '${greetingAt(BhutanTime.now())}, ${firstName(profile?.fullName ?? '')}',
@@ -210,33 +271,50 @@ class _ConsoleState extends ConsumerState<_Console> {
           "Here's what's happening at ${venue.name} today · ${_weekdays[today.weekday - 1]}, ${formatShortDate(today)}",
           style: TextStyle(fontSize: 15, color: context.brand.muted),
         ),
-        if (!venue.isVerified) ...[
+        const SizedBox(height: 16),
+        FadeSlideIn(child: _QuickActions(access: access)),
+        if (setup != null) ...[const SizedBox(height: 20), FadeSlideIn(child: setup)],
+        if (alerts.isNotEmpty) ...[
           const SizedBox(height: 16),
-          _Notice(
-            text: 'SportsHub is still checking ${venue.name}. Members can find it and join once it is verified.',
+          FadeSlideIn(
+            delay: const Duration(milliseconds: 60),
+            child: Wrap(spacing: 12, runSpacing: 12, children: alerts),
           ),
         ],
         const SizedBox(height: 24),
-        ConsoleCells(columns: contentWidth >= 900 ? 4 : 2, spacing: 16, children: kpis),
+        ConsoleCells(columns: contentWidth >= 900 ? 4 : 2, spacing: 16, children: staggered(kpis)),
         const SizedBox(height: 20),
-        if (contentWidth >= 1000)
-          sideBySide([if (revenue != null) (5, revenue), (3, status), (3, actions)], height: 410)
-        else if (contentWidth >= 640) ...[
-          if (revenue != null) ...[revenue, const SizedBox(height: 20)],
-          sideBySide([(1, status), (1, actions)], height: 400),
-        ] else ...[
-          if (revenue != null) ...[revenue, const SizedBox(height: 16)],
-          status,
-          const SizedBox(height: 16),
-          actions,
-        ],
+        FadeSlideIn(
+          delay: const Duration(milliseconds: 120),
+          child: sideBySideCards
+              ? sideBySide([(5, revenue!), (3, status)], height: 410)
+              : revenue == null && contentWidth >= 900
+                  // The front desk: no revenue; visits beside where members stand.
+                  ? sideBySide([(3, checkInCard), (2, status)])
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (revenue != null) ...[revenue, SizedBox(height: contentWidth >= 640 ? 20 : 16)],
+                        status,
+                      ],
+                    ),
+        ),
         const SizedBox(height: 20),
-        if (contentWidth >= 900)
-          sideBySide([(3, activity), (2, endingCard)])
-        else ...[
-          activity,
-          const SizedBox(height: 16),
-          endingCard,
+        FadeSlideIn(
+          delay: const Duration(milliseconds: 180),
+          child: contentWidth >= 900
+              ? sideBySide([if (revenue != null) (3, checkInCard) else (3, activity), (2, endingCard)])
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (revenue != null || contentWidth < 900) ...[checkInCard, const SizedBox(height: 16)],
+                    endingCard,
+                  ],
+                ),
+        ),
+        if (revenue != null || contentWidth < 900) ...[
+          const SizedBox(height: 20),
+          FadeSlideIn(delay: const Duration(milliseconds: 220), child: activity),
         ],
       ],
     );
@@ -245,216 +323,215 @@ class _ConsoleState extends ConsumerState<_Console> {
 
 String _daysText(int days) => days == 1 ? 'last day' : '$days days left';
 
-// ─── Frame ─────────────────────────────────────────────────────────────────
-
-String _roleLabel(String role) => switch (role) {
-      VenueRole.owner => 'Gym owner',
-      VenueRole.manager => 'Manager',
-      VenueRole.staff => 'Front desk',
-      _ => 'SportsHub admin',
-    };
-
-/// The gym's menu, on navy: its pages, the gym's own pages, and back to
-/// SportsHub.
-class _SideNav extends ConsumerWidget {
+/// The desk's shortcuts, as their role allows: check in, register, a new
+/// package, staff.
+class _QuickActions extends StatelessWidget {
   final VenueAccess access;
 
-  /// In the phone's drawer, which closes before a page opens.
-  final bool inDrawer;
-
-  const _SideNav({required this.access, required this.inDrawer});
+  const _QuickActions({required this.access});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final id = access.venue.id;
-    final pending = ref.watch(gymDashboardProvider(id)).valueOrNull?.pending ?? 0;
-    final profile = ref.watch(myProfileProvider).valueOrNull;
-    void open(String route) {
-      if (inDrawer) Navigator.of(context).pop();
-      context.push(route);
-    }
-
-    final name = (profile?.fullName ?? '').trim();
-    return ConsoleSideNav(
-      items: [
-        ConsoleNavItem(
-          icon: Icons.space_dashboard_rounded,
-          label: 'Dashboard',
-          selected: true,
-          onTap: () {
-            if (inDrawer) Navigator.of(context).pop();
-          },
-        ),
-        ConsoleNavItem(
-          icon: Icons.qr_code_scanner_rounded,
-          label: 'Check in',
-          onTap: () => open(GymRoutes.checkInFor(id)),
-        ),
-        ConsoleNavItem(
-          icon: Icons.inbox_outlined,
-          label: 'Requests',
-          badge: pending,
-          onTap: () => open(GymRoutes.requestsFor(id)),
-        ),
-        ConsoleNavItem(icon: Icons.groups_rounded, label: 'Members', onTap: () => open(GymRoutes.membersFor(id))),
-        if (access.canManage) ...[
-          ConsoleNavItem(icon: Icons.sell_outlined, label: 'Plans & prices', onTap: () => open(GymRoutes.plansFor(id))),
-          ConsoleNavItem(icon: Icons.payments_outlined, label: 'Income', onTap: () => open(GymRoutes.incomeFor(id))),
-          ConsoleNavItem(icon: Icons.badge_outlined, label: 'Staff', onTap: () => open(CoreRoutes.venueStaffFor(id))),
-        ],
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        ConsoleNavItem(icon: Icons.storefront_outlined, label: 'Gym page', onTap: () => open(GymRoutes.gymFor(id))),
-        ConsoleNavItem(
-          icon: Icons.tune_rounded,
-          label: 'Gym settings',
-          onTap: () => open(CoreRoutes.venueManageFor(id)),
-        ),
-      ],
-      footer: [
-        ConsoleNavItem(
-          icon: Icons.home_outlined,
-          label: 'SportsHub home',
-          onTap: () {
-            if (inDrawer) Navigator.of(context).pop();
-            context.go(CoreRoutes.home);
-          },
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: BrandColors.orange,
-                child: Text(
-                  name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+    final actions = [
+      if (access.can(GymPermission.checkIn))
+        (Icons.qr_code_scanner_rounded, 'Check in', GymRoutes.checkInFor(id)),
+      if (access.can(GymPermission.register))
+        (Icons.person_add_alt_1_rounded, 'Register member', GymRoutes.registerMemberFor(id)),
+      if (access.can(GymPermission.members)) (Icons.search_rounded, 'Find a member', GymRoutes.membersFor(id)),
+      if (access.can(GymPermission.plans)) (Icons.add_card_rounded, 'New package', GymRoutes.newPlanFor(id)),
+      if (access.can(VenuePermission.staff)) (Icons.group_add_outlined, 'Add staff', CoreRoutes.venueStaffFor(id)),
+    ];
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        for (final (i, (icon, label, route)) in actions.indexed)
+          i == 0
+              ? FilledButton.icon(
+                  onPressed: () => context.push(route),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: BrandColors.orange,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                  ),
+                  icon: Icon(icon, size: 20),
+                  label: Text(label),
+                )
+              : OutlinedButton.icon(
+                  onPressed: () => context.push(route),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 16)),
+                  icon: Icon(icon, size: 20),
+                  label: Text(label),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name.isEmpty ? 'You' : name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
-                    ),
-                    Text(
-                      _roleLabel(access.role),
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
 }
 
-/// The menu button (phones), the gym (a switcher for someone at more than
-/// one), its public page, notifications and the account.
-class _TopBar extends ConsumerWidget {
-  final VenueAccess access;
-  final bool showMenu;
+/// A getting-started step: done (ticked) or the way to do it.
+class _Step {
+  final bool done;
+  final String title;
+  final String text;
+  final String action;
+  final String route;
 
-  const _TopBar({required this.access, required this.showMenu});
+  const _Step({required this.done, required this.title, required this.text, required this.action, required this.route});
+}
+
+/// Get your gym ready: the steps left, how far along, and each one's way in.
+class _SetupCard extends StatelessWidget {
+  final List<_Step> steps;
+
+  const _SetupCard({required this.steps});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
-    final gyms = (ref.watch(myVenuesProvider).valueOrNull ?? const <MyVenue>[])
-        .where((v) => v.venue.type == gymVenueType)
-        .toList();
-    final current = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: BrandColors.orange.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Icon(Icons.fitness_center_rounded, size: 18, color: BrandColors.orange),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            access.venue.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: ink.heading),
-          ),
-        ),
-        if (gyms.length > 1) Icon(Icons.expand_more_rounded, color: ink.heading),
-      ],
-    );
+    final done = steps.where((s) => s.done).length;
+    final next = steps.indexWhere((s) => !s.done);
     return Container(
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: ink.card,
-        border: Border(bottom: BorderSide(color: context.brand.glassBorder)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: BrandColors.orange.withValues(alpha: 0.35)),
+        boxShadow: ink.shadow,
       ),
-      child: SafeArea(
-        bottom: false,
-        left: false,
-        child: SizedBox(
-          height: 66,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                if (showMenu)
-                  IconButton(
-                    tooltip: 'Menu',
-                    icon: const Icon(Icons.menu_rounded),
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                  ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: gyms.length > 1
-                        ? PopupMenuButton<String>(
-                            tooltip: 'Switch gym',
-                            onSelected: (id) => context.pushReplacement(GymRoutes.dashboardFor(id)),
-                            itemBuilder: (_) => [
-                              for (final g in gyms)
-                                PopupMenuItem(
-                                  value: g.venue.id,
-                                  child: Text(g.venue.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                ),
-                            ],
-                            child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: current),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.rocket_launch_rounded, color: BrandColors.orange),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Get your gym ready',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink.heading)),
+              ),
+              Text('$done of ${steps.length} done', style: TextStyle(color: context.brand.muted, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: done / steps.length),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => LinearProgressIndicator(
+                value: v,
+                minHeight: 6,
+                color: BrandColors.orange,
+                backgroundColor: BrandColors.orange.withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final (i, s) in steps.indexed)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: LayoutBuilder(builder: (context, c) {
+                // On a phone the button goes under the step, not beside it.
+                final narrow = c.maxWidth < 520;
+                final Widget? button = s.done
+                    ? null
+                    : i == next
+                        ? FilledButton(
+                            onPressed: () => context.push(s.route),
+                            style: FilledButton.styleFrom(minimumSize: const Size(0, 38)),
+                            child: Text(s.action),
                           )
-                        : current,
-                  ),
-                ),
-                IconButton(
-                  tooltip: "The gym's public page",
-                  icon: const Icon(Icons.storefront_outlined),
-                  onPressed: () => context.push(GymRoutes.gymFor(access.venue.id)),
-                ),
-                const ThemeModeButton(),
-                const NotificationBell(),
-                IconButton(
-                  tooltip: 'Account',
-                  icon: const Icon(Icons.account_circle_outlined),
-                  onPressed: () => context.push(CoreRoutes.account),
-                ),
-              ],
+                        : TextButton(onPressed: () => context.push(s.route), child: Text(s.action));
+                return Row(
+                  crossAxisAlignment: narrow ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: s.done ? context.brand.success : Colors.transparent,
+                        border: Border.all(color: s.done ? context.brand.success : context.brand.glassBorder, width: 2),
+                      ),
+                      child: s.done
+                          ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
+                          : Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.w800, color: ink.body)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: s.done ? context.brand.muted : ink.heading,
+                              decoration: s.done ? TextDecoration.lineThrough : null,
+                            ),
+                          ),
+                          if (!s.done) Text(s.text, style: TextStyle(color: context.brand.muted, fontSize: 13)),
+                          if (narrow && button != null) ...[const SizedBox(height: 8), button],
+                        ],
+                      ),
+                    ),
+                    if (!narrow && button != null) ...[const SizedBox(width: 8), button],
+                  ],
+                );
+              }),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Something that needs the desk now: a package ending, a member without
+/// one, the gym being verified.
+class _Alert extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String text;
+  final VoidCallback? onTap;
+
+  const _Alert({required this.icon, required this.color, required this.text, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 560),
+      child: HoverLift(
+        enabled: onTap != null,
+        radius: 14,
+        child: Material(
+          color: color.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: color, size: 20),
+                  const SizedBox(width: 10),
+                  Flexible(child: Text(text, style: TextStyle(color: ConsoleInk.of(context).body, fontWeight: FontWeight.w600))),
+                  if (onTap != null) ...[
+                    const SizedBox(width: 6),
+                    Icon(Icons.chevron_right_rounded, color: color, size: 20),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -463,26 +540,36 @@ class _TopBar extends ConsumerWidget {
   }
 }
 
-class _Notice extends StatelessWidget {
-  final String text;
+/// Check-ins on each of the last 7 days, today marked.
+class _CheckInsCard extends StatelessWidget {
+  final List<GymCheckIn> checkIns;
+  final DateTime today;
+  final String venueId;
 
-  const _Notice({required this.text});
+  const _CheckInsCard({required this.checkIns, required this.today, required this.venueId});
 
   @override
   Widget build(BuildContext context) {
-    final warning = context.brand.warning;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: warning.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: warning.withValues(alpha: 0.35)),
-      ),
-      child: Row(
+    final points = visitSeries(checkIns, today, RevenueRange.week);
+    final total = points.fold<int>(0, (s, p) => s + p.amount);
+    return ConsoleCard(
+      icon: Icons.login_rounded,
+      title: 'Check-in activity',
+      trailing: ConsoleLink(label: 'Scan a card', onPressed: () => context.push(GymRoutes.checkInFor(venueId))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.hourglass_top_rounded, color: warning),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text, style: TextStyle(color: ConsoleInk.of(context).body, height: 1.4))),
+          Text('$total check-in${total == 1 ? '' : 's'} in the last 7 days',
+              style: TextStyle(fontSize: 13, color: context.brand.muted)),
+          const SizedBox(height: 10),
+          ConsoleBarChart(
+            name: 'Check-ins, last 7 days',
+            height: 180,
+            color: BrandColors.green,
+            highlight: points.length - 1,
+            points: [for (final p in points) (label: p.label, value: p.amount)],
+            format: (v) => '${v.round()}',
+          ),
         ],
       ),
     );
@@ -525,7 +612,7 @@ class _RevenueCard extends StatelessWidget {
     if (list == null && payments.hasError) {
       chart = Center(child: Text("Couldn't load payments", style: TextStyle(color: context.brand.muted)));
     } else if (list == null) {
-      chart = const Center(child: CircularProgressIndicator());
+      chart = const LoadingSkeleton(semanticsLabel: 'Loading payments');
     } else {
       chart = ConsoleLineChart(
         points: [for (final p in points) (label: p.label, value: p.amount)],
@@ -559,15 +646,12 @@ class _RevenueCard extends StatelessWidget {
   }
 }
 
-/// Active and expired members as a ring, the total inside; requests waiting
-/// under it.
+/// Active and expired members as a ring, the total inside.
 class _StatusCard extends StatelessWidget {
   final MemberStanding standing;
-  final int waiting;
-  final String venueId;
   final bool fill;
 
-  const _StatusCard({required this.standing, required this.waiting, required this.venueId, required this.fill});
+  const _StatusCard({required this.standing, required this.fill});
 
   @override
   Widget build(BuildContext context) {
@@ -589,8 +673,11 @@ class _StatusCard extends StatelessWidget {
             center: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('$total',
-                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: ink.heading, height: 1)),
+                AnimatedCount(
+                  value: total,
+                  format: AnimatedCount.whole,
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: ink.heading, height: 1),
+                ),
                 const SizedBox(height: 2),
                 Text(total == 1 ? 'member' : 'members', style: TextStyle(fontSize: 12.5, color: context.brand.muted)),
               ],
@@ -613,74 +700,7 @@ class _StatusCard extends StatelessWidget {
                 ],
               ),
             ),
-          if (waiting > 0)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => context.push(GymRoutes.requestsFor(venueId)),
-                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
-                icon: Icon(Icons.hourglass_top_rounded, size: 17, color: context.brand.warning),
-                label: Text('$waiting waiting for payment'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Check in first; then the gym's other pages, waiting requests counted.
-class _ActionsCard extends StatelessWidget {
-  final VenueAccess access;
-  final int pending;
-  final bool fill;
-
-  const _ActionsCard({required this.access, required this.pending, required this.fill});
-
-  @override
-  Widget build(BuildContext context) {
-    final id = access.venue.id;
-    final tiles = [
-      ConsoleActionTile(
-        icon: Icons.inbox_outlined,
-        label: 'Requests',
-        badge: pending,
-        onTap: () => context.push(GymRoutes.requestsFor(id)),
-      ),
-      ConsoleActionTile(
-          icon: Icons.groups_rounded, label: 'Members', onTap: () => context.push(GymRoutes.membersFor(id))),
-      if (access.canManage) ...[
-        ConsoleActionTile(
-            icon: Icons.sell_outlined, label: 'Plans & prices', onTap: () => context.push(GymRoutes.plansFor(id))),
-        ConsoleActionTile(
-            icon: Icons.payments_outlined, label: 'Income', onTap: () => context.push(GymRoutes.incomeFor(id))),
-        ConsoleActionTile(
-            icon: Icons.badge_outlined, label: 'Staff', onTap: () => context.push(CoreRoutes.venueStaffFor(id))),
-      ],
-      ConsoleActionTile(
-          icon: Icons.storefront_outlined, label: 'Gym page', onTap: () => context.push(GymRoutes.gymFor(id))),
-    ];
-    return ConsoleCard(
-      icon: Icons.bolt_rounded,
-      title: 'Quick actions',
-      fill: fill,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          FilledButton.icon(
-            onPressed: () => context.push(GymRoutes.checkInFor(id)),
-            style: FilledButton.styleFrom(
-              backgroundColor: BrandColors.orange,
-              foregroundColor: Colors.white,
-              shape: const StadiumBorder(),
-              minimumSize: const Size.fromHeight(50),
-              textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            icon: const Icon(Icons.qr_code_scanner_rounded),
-            label: const Text('Check in a member'),
-          ),
-          const SizedBox(height: 14),
-          ConsoleTileGrid(tiles: tiles),
+          
         ],
       ),
     );

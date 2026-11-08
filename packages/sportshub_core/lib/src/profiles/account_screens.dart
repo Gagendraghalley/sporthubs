@@ -7,15 +7,15 @@ import '../router/core_routes.dart';
 import '../theme/brand.dart';
 import '../theme/theme_mode.dart';
 import '../utils/validators.dart';
-import '../venues/venue_repository.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/responsive.dart';
 import 'profile.dart';
 import 'profile_repository.dart';
 
-/// The signed-in user's page: their profile, appearance, their venues,
+/// The signed-in user's page: their profile, appearance,
 /// signing out and deleting the account.
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -23,7 +23,6 @@ class AccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(myProfileProvider);
-    final venues = ref.watch(myVenuesProvider).valueOrNull ?? const [];
     return AppPage(
       title: 'Account',
       body: AsyncValueView<Profile?>(
@@ -32,6 +31,9 @@ class AccountScreen extends ConsumerWidget {
         data: (p) => ListView(
           padding: pagePadding(context),
           children: [
+            ResponsiveColumns(
+              first: [
+            const SectionTitle('Profile'),
             if (p != null) _ProfileCard(profile: p),
             const SizedBox(height: 12),
             MenuTile(
@@ -40,33 +42,11 @@ class AccountScreen extends ConsumerWidget {
               subtitle: 'Name, phone and dzongkhag',
               onTap: () => context.push(CoreRoutes.editProfile),
             ),
-            const SizedBox(height: 10),
+            ],
+              // Gyms, registering one and admin are in the menu.
+              second: [
+            const SectionTitle('Settings'),
             const _AppearanceCard(),
-            const SectionTitle('Venues'),
-            if (venues.isNotEmpty) ...[
-              MenuTile(
-                icon: Icons.storefront_rounded,
-                title: 'Your venues',
-                subtitle: venues.length == 1 ? venues.first.venue.name : '${venues.length} venues',
-                onTap: () => context.push(CoreRoutes.manage),
-              ),
-              const SizedBox(height: 10),
-            ],
-            MenuTile(
-              icon: Icons.add_business_outlined,
-              title: 'Register your venue',
-              subtitle: 'Run a gym or ground? List it on SportsHub',
-              onTap: () => context.push(CoreRoutes.registerVenue),
-            ),
-            if (p?.isAdmin ?? false) ...[
-              const SizedBox(height: 10),
-              MenuTile(
-                icon: Icons.admin_panel_settings_outlined,
-                title: 'SportsHub admin',
-                subtitle: 'Verify venues, turn modules on and off',
-                onTap: () => context.push(CoreRoutes.admin),
-              ),
-            ],
             const SizedBox(height: 24),
             OutlinedButton.icon(
               icon: const Icon(Icons.logout_rounded),
@@ -81,6 +61,8 @@ class AccountScreen extends ConsumerWidget {
               style: TextButton.styleFrom(foregroundColor: context.brand.danger),
               onPressed: () => _deleteAccount(context, ref),
               child: const Text('Delete my account'),
+            ),
+              ],
             ),
           ],
         ),

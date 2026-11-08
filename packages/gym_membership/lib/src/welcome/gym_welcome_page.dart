@@ -1844,14 +1844,9 @@ class _Footer extends StatelessWidget {
         ],
       ],
     );
-    // The logo's navy lettering wants white under it, light theme or dark.
-    final logo = DecoratedBox(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Theme(data: AppTheme.light, child: const SportsHubLogo(height: 48)),
-      ),
-    );
+    // The white-lettered logo, straight on the footer's navy, light theme
+    // or dark.
+    const logo = SportsHubLogo(height: 60, onDark: true);
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(

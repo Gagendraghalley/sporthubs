@@ -42,6 +42,25 @@ String formatDuration(int days) {
   return days == 1 ? '1 day' : '$days days';
 }
 
+/// 'just now', '5 min ago', '3 h ago', 'yesterday', '4 days ago', then the
+/// date: when [moment] was, from [now].
+String timeAgo(DateTime moment, {DateTime? now}) {
+  final gap = (now ?? DateTime.now()).toUtc().difference(moment.toUtc());
+  if (gap.inMinutes < 1) return 'just now';
+  if (gap.inMinutes < 60) return '${gap.inMinutes} min ago';
+  if (gap.inHours < 24) return '${gap.inHours} h ago';
+  if (gap.inDays == 1) return 'yesterday';
+  if (gap.inDays < 7) return '${gap.inDays} days ago';
+  return formatShortDate(BhutanTime.toBhutan(moment));
+}
+
+/// 'Good morning', 'Good afternoon' or 'Good evening', at [bhutanNow].
+String greeting(DateTime bhutanNow) => bhutanNow.hour < 12
+    ? 'Good morning'
+    : bhutanNow.hour < 17
+        ? 'Good afternoon'
+        : 'Good evening';
+
 /// 'Pema' from 'Pema Wangmo'; [fallback] when empty.
 String firstName(String fullName, {String fallback = 'there'}) {
   final first = fullName.trim().split(RegExp(r'\s+')).first;

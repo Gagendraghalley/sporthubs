@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:sportshub_core/sportshub_core.dart';
 
-/// Plus Jakarta Sans, declared in this package's pubspec.
-const gymFont = 'packages/gym_membership/PlusJakartaSans';
+/// The platform's typeface (sportshub_core's brandFont), which the theme
+/// already gives every page; kept for the Welcome page and the card picture.
+const gymFont = brandFont;
 
-/// [child] in the gym pages' own type (the Welcome page, the dashboard):
-/// Plus Jakarta Sans for every text style of the theme.
+/// [child] in the platform's typeface for every text style of the theme, for
+/// pages drawn outside the app's theme (none now; kept so callers keep
+/// working).
 class GymType extends StatelessWidget {
   final Widget child;
 

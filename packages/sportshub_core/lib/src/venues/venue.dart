@@ -6,29 +6,52 @@ abstract final class VerificationStatus {
   static const rejected = 'rejected';
 }
 
-/// venue_staff.role: who runs a venue. Per venue, not across the platform:
-/// a gym's owner can be a member somewhere else.
+/// venue_staff.role: who runs a venue, as a key of the roles table. Per
+/// venue, not across the platform: a gym's owner can be a member somewhere
+/// else. These come with SportsHub; admins add more (Roles and permissions),
+/// so what a role may do comes from its permissions, not its key.
 abstract final class VenueRole {
+  /// Always has every permission.
   static const owner = 'owner';
   static const manager = 'manager';
-  static const staff = 'staff';
 
-  /// Not a venue_staff role: a SportsHub admin looking at any venue.
+  /// Shown as 'Front desk'.
+  static const staff = 'staff';
+  static const trainer = 'trainer';
+
+  /// Not a venue_staff role: a SportsHub super admin looking at any venue.
   static const admin = 'admin';
 
-  /// Owners and managers change details, plans and prices, and see income.
-  static bool canManage(String role) => role == owner || role == manager || role == admin;
-
-  /// Only owners add or remove staff.
-  static bool canEditStaff(String role) => role == owner || role == admin;
-
+  /// The name of a role that comes with SportsHub; others show their own.
   static String label(String role) => switch (role) {
         owner => 'Owner',
         manager => 'Manager',
-        staff => 'Staff',
-        admin => 'Admin',
+        staff => 'Front desk',
+        trainer => 'Trainer',
+        admin => 'SportsHub admin',
         _ => role,
       };
+
+  /// Owners and super admins may do everything at a venue.
+  static bool hasEverything(String role) => role == owner || role == admin;
+}
+
+/// Someone's place at a venue: their role there and what it lets them do.
+class VenueAccess {
+  final Venue venue;
+
+  /// The role's key ([VenueRole]), or 'admin' for a super admin.
+  final String role;
+  final String roleName;
+
+  /// The role's permission keys (VenuePermission, and the modules' own).
+  final Set<String> permissions;
+
+  VenueAccess(this.venue, this.role, {String? roleName, Set<String> permissions = const {}})
+      : roleName = roleName ?? VenueRole.label(role),
+        permissions = Set.unmodifiable(permissions);
+
+  bool can(String permission) => VenueRole.hasEverything(role) || permissions.contains(permission);
 }
 
 /// A place on SportsHub: a gym today; more types as modules add them
@@ -152,12 +175,36 @@ class VenueDraft {
   }
 }
 
-/// A venue the signed-in user runs, with their role there.
+/// A venue the signed-in user runs, with their role there and what it lets
+/// them do.
 class MyVenue {
   final Venue venue;
   final String role;
+  final String roleName;
+  final Set<String> permissions;
 
-  const MyVenue(this.venue, this.role);
+  MyVenue(this.venue, this.role, {String? roleName, this.permissions = const {}})
+      : roleName = roleName ?? VenueRole.label(role);
+
+  VenueAccess get access => VenueAccess(venue, role, roleName: roleName, permissions: permissions);
+
+  /// A venue_staff row with its venue and role:
+  /// `role, venue:venues(*), role_info:roles(name, is_active, role_permissions(permission_key))`.
+  /// Null when the venue is gone or the role is turned off.
+  static MyVenue? fromJson(Map<String, dynamic> json) {
+    final venue = json['venue'] as Map<String, dynamic>?;
+    final info = json['role_info'] as Map<String, dynamic>?;
+    if (venue == null || (info != null && info['is_active'] == false)) return null;
+    return MyVenue(
+      Venue.fromJson(venue),
+      json['role'] as String,
+      roleName: info?['name'] as String?,
+      permissions: {
+        for (final p in (info?['role_permissions'] as List? ?? const []))
+          (p as Map<String, dynamic>)['permission_key'] as String,
+      },
+    );
+  }
 }
 
 /// Someone on a venue's staff list.
@@ -165,18 +212,20 @@ class VenueStaffMember {
   final String venueId;
   final String userId;
   final String role;
+  final String roleName;
   final String name;
   final String? email;
   final String? phone;
 
-  const VenueStaffMember({
+  VenueStaffMember({
     required this.venueId,
     required this.userId,
     required this.role,
     required this.name,
+    String? roleName,
     this.email,
     this.phone,
-  });
+  }) : roleName = roleName ?? VenueRole.label(role);
 
   factory VenueStaffMember.fromJson(Map<String, dynamic> json) {
     final profile = json['profile'] as Map<String, dynamic>?;
@@ -185,6 +234,7 @@ class VenueStaffMember {
       venueId: json['venue_id'] as String,
       userId: json['user_id'] as String,
       role: json['role'] as String,
+      roleName: (json['role_info'] as Map<String, dynamic>?)?['name'] as String?,
       name: name.isEmpty ? (profile?['email'] as String? ?? 'SportsHub member') : name,
       email: profile?['email'] as String?,
       phone: profile?['phone'] as String?,

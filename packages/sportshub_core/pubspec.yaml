@@ -25,6 +25,23 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter:
-  # Used as Image.asset(..., package: 'sportshub_core') (SportsHubLogo).
+  # Used as Image.asset(..., package: 'sportshub_core') (SportsHubLogo, and
+  # the sign-in pages' photo, AuthLayout.photo: assets/PHOTO_CREDITS.md).
   assets:
     - assets/images/
+    - assets/auth/
+  fonts:
+    # The platform's typeface, every service's (brandFont, used as
+    # 'packages/sportshub_core/PlusJakartaSans'). Plus Jakarta Sans, SIL Open
+    # Font License (assets/fonts/OFL.txt).
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
+        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
+          weight: 800

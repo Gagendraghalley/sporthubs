@@ -21,8 +21,12 @@ Future<void> main() async {
     runApp(StartupProblemApp(problem));
     return;
   }
+  // The splash's logo is read while Supabase starts, so the first frame
+  // shows it and the launch screen hands over without a blink.
+  final splashLogo = SportsHubSplash.precacheLogo();
   await Supabase.initialize(url: Env.supabaseUrl, publishableKey: Env.supabaseAnonKey);
   final themeMode = await ThemeModeController.saved();
+  await splashLogo;
   runApp(
     ProviderScope(
       overrides: [

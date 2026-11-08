@@ -1,14 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:sportshub_core/sportshub_core.dart';
+import '../theme/brand.dart';
+import '../utils/bhutan_time.dart';
+import 'motion.dart';
 
-import 'gym_type.dart';
-
-// The console look the gym dashboard and the signed-in home share: a navy
-// menu down the side, white cards with an orange icon, numbers across the
-// top with their trend, an orange line chart, a ring, tiles of shortcuts and
-// a footer. Light and dark.
+// The dashboard look every service shares: white (or dark) cards with an
+// icon and a title, numbers across the top that count up, a line chart
+// that draws itself in, a ring, tiles of shortcuts and a footer. Light and
+// dark.
 
 /// Text, card and shadow colours, light or dark.
 class ConsoleInk {
@@ -125,7 +125,7 @@ class ConsoleLink extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: gymFont),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: brandFont),
       ),
     );
   }
@@ -140,8 +140,13 @@ class ConsoleKpi extends StatelessWidget {
   final String value;
   final String label;
   final String note;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget? trailing;
+
+  /// The number behind [value], to count up to it; [format] writes it
+  /// (whole numbers unless given).
+  final num? count;
+  final String Function(num)? format;
 
   const ConsoleKpi({
     super.key,
@@ -150,13 +155,19 @@ class ConsoleKpi extends StatelessWidget {
     required this.value,
     required this.label,
     required this.note,
-    required this.onTap,
+    this.onTap,
     this.trailing,
+    this.count,
+    this.format,
   });
 
   @override
   Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
+    return HoverLift(enabled: onTap != null, child: _card(context, ink));
+  }
+
+  Widget _card(BuildContext context, ConsoleInk ink) {
     return DecoratedBox(
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: ink.shadow),
       child: Material(
@@ -185,13 +196,14 @@ class ConsoleKpi extends StatelessWidget {
                 final side = trailing == null
                     ? null
                     : FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.topRight, child: trailing);
+                final numberStyle =
+                    TextStyle(fontSize: narrow ? 24 : 27, fontWeight: FontWeight.w800, color: ink.heading, height: 1.1);
                 final number = FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    value,
-                    style: TextStyle(fontSize: narrow ? 24 : 27, fontWeight: FontWeight.w800, color: ink.heading, height: 1.1),
-                  ),
+                  child: count == null
+                      ? Text(value, style: numberStyle)
+                      : AnimatedCount(value: count!, format: format ?? AnimatedCount.whole, style: numberStyle),
                 );
                 final under = [
                   const SizedBox(height: 2),
@@ -422,23 +434,31 @@ class ConsoleLineChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
     final best = points.fold<({String label, int value})?>(null, (b, p) => b == null || p.value > b.value ? p : b);
+    CustomPainter paint(double progress) => _LinePainter(
+          points: points,
+          format: format,
+          whole: whole,
+          progress: progress,
+          label: TextStyle(fontSize: 11.5, color: context.brand.muted, fontFamily: brandFont),
+          bubble: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink.heading, fontFamily: brandFont),
+          bubbleColor: ink.card,
+          grid: context.brand.glassBorder,
+          line: BrandColors.orange,
+        );
     return Semantics(
       label: best == null || best.value == 0
           ? '$name: $noneText'
           : '$name: highest ${format(best.value)} on ${best.label}',
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _LinePainter(
-          points: points,
-          format: format,
-          whole: whole,
-          label: TextStyle(fontSize: 11.5, color: context.brand.muted, fontFamily: gymFont),
-          bubble: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink.heading, fontFamily: gymFont),
-          bubbleColor: ink.card,
-          grid: context.brand.glassBorder,
-          line: BrandColors.orange,
-        ),
-      ),
+      // The line draws itself in, left to right, each time the figures change.
+      child: reduceMotion(context)
+          ? CustomPaint(size: Size.infinite, painter: paint(1))
+          : TweenAnimationBuilder<double>(
+              key: ValueKey(Object.hashAll(points.map((p) => Object.hash(p.label, p.value)))),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, t, _) => CustomPaint(size: Size.infinite, painter: paint(t)),
+            ),
     );
   }
 }
@@ -466,6 +486,9 @@ class _LinePainter extends CustomPainter {
   final List<({String label, int value})> points;
   final String Function(int) format;
   final bool whole;
+
+  /// How far it has drawn in, 0 to 1.
+  final double progress;
   final TextStyle label;
   final TextStyle bubble;
   final Color bubbleColor;
@@ -476,6 +499,7 @@ class _LinePainter extends CustomPainter {
     required this.points,
     required this.format,
     required this.whole,
+    this.progress = 1,
     required this.label,
     required this.bubble,
     required this.bubbleColor,
@@ -518,11 +542,25 @@ class _LinePainter extends CustomPainter {
     final at = [
       for (var i = 0; i < n; i++) Offset(chart.left + dx * i, chart.bottom - chart.height * points[i].value / top),
     ];
-    final path = _smooth(at);
-    final area = Path.from(path)
+    final full = _smooth(at);
+    // Drawn in so far: the line up to [progress] of its length, the fill under
+    // it clipped to the same width.
+    final drawnTo = chart.left + (at.last.dx - chart.left) * progress;
+    final Path path;
+    if (progress >= 1) {
+      path = full;
+    } else {
+      path = Path();
+      for (final metric in full.computeMetrics()) {
+        path.addPath(metric.extractPath(0, metric.length * progress), Offset.zero);
+      }
+    }
+    final area = Path.from(full)
       ..lineTo(at.last.dx, chart.bottom)
       ..lineTo(at.first.dx, chart.bottom)
       ..close();
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(0, 0, drawnTo + 1, size.height));
     canvas.drawPath(
       area,
       Paint()
@@ -532,6 +570,7 @@ class _LinePainter extends CustomPainter {
           colors: [line.withValues(alpha: 0.3), line.withValues(alpha: 0)],
         ).createShader(chart),
     );
+    canvas.restore();
     canvas.drawPath(
       path,
       Paint()
@@ -543,6 +582,7 @@ class _LinePainter extends CustomPainter {
     );
     if (n <= 13) {
       for (final o in at) {
+        if (o.dx > drawnTo + 0.5) continue;
         canvas.drawCircle(o, 5, Paint()..color = bubbleColor);
         canvas.drawCircle(
           o,
@@ -560,7 +600,7 @@ class _LinePainter extends CustomPainter {
     for (var i = 1; i < n; i++) {
       if (points[i].value > points[best].value) best = i;
     }
-    if (points[best].value > 0) {
+    if (points[best].value > 0 && at[best].dx <= drawnTo + 0.5) {
       final t = _text(format(points[best].value), bubble);
       final w = t.width + 18;
       final h = t.height + 10;
@@ -583,10 +623,183 @@ class _LinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_LinePainter old) =>
       old.points != points ||
+      old.progress != progress ||
       old.whole != whole ||
       old.line != line ||
       old.grid != grid ||
       old.bubbleColor != bubbleColor;
+}
+
+/// Bars that grow into place, one per point: the [highlight]ed one (else the
+/// tallest) in [color] with its value over it, the rest paler. A tooltip on
+/// each; tapping one calls [onTap]. Labels under them, every few when
+/// they'd crowd.
+class ConsoleBarChart extends StatelessWidget {
+  final List<({String label, num value})> points;
+  final String Function(num) format;
+  final Color color;
+  final double height;
+  final int? highlight;
+  final ValueChanged<int>? onTap;
+
+  /// What it shows, read out.
+  final String name;
+
+  const ConsoleBarChart({
+    super.key,
+    required this.points,
+    required this.format,
+    required this.name,
+    this.color = BrandColors.orange,
+    this.height = 200,
+    this.highlight,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final most = points.fold<num>(0, (m, p) => math.max(m, p.value));
+    final marked = highlight ?? (most == 0 ? null : points.indexWhere((p) => p.value == most));
+    final muted = context.brand.muted;
+    final ink = ConsoleInk.of(context);
+
+    Widget bars(double t) => LayoutBuilder(
+          builder: (context, c) {
+            final n = points.length;
+            final every = math.max(1, (n * 34 / c.maxWidth).ceil());
+            final gap = n > 16 ? 3.0 : (n > 8 ? 6.0 : 10.0);
+            final area = c.maxHeight - 22 - 20;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var i = 0; i < n; i++)
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: gap / 2),
+                      child: Tooltip(
+                        message: '${points[i].label}: ${format(points[i].value)}',
+                        child: InkWell(
+                          onTap: onTap == null ? null : () => onTap!(i),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              SizedBox(
+                                height: 20,
+                                child: i == marked && points[i].value > 0
+                                    ? FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Opacity(
+                                          opacity: t,
+                                          child: Text(format(points[i].value),
+                                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: ink.heading)),
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              Container(
+                                height: most == 0 ? 2 : math.max(points[i].value > 0 ? 3.0 : 2.0, area * points[i].value / most * t),
+                                decoration: BoxDecoration(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(6), bottom: Radius.circular(2)),
+                                  gradient: i == marked
+                                      ? LinearGradient(
+                                          colors: [color, color.withValues(alpha: 0.75)],
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter)
+                                      : null,
+                                  color: i == marked ? null : color.withValues(alpha: points[i].value == 0 ? 0.12 : 0.28),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 22,
+                                child: i % every == 0
+                                    ? Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: Text(points[i].label,
+                                            maxLines: 1,
+                                            softWrap: false,
+                                            overflow: TextOverflow.visible,
+                                            style: TextStyle(fontSize: 11, color: muted)),
+                                      )
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+
+    return Semantics(
+      label: marked == null ? '$name: none yet' : '$name: highest ${format(points[marked].value)}, ${points[marked].label}',
+      child: SizedBox(
+        height: height,
+        child: reduceMotion(context)
+            ? bars(1)
+            : TweenAnimationBuilder<double>(
+                key: ValueKey(Object.hashAll(points.map((p) => Object.hash(p.label, p.value)))),
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeOutCubic,
+                builder: (context, t, _) => bars(t),
+              ),
+      ),
+    );
+  }
+}
+
+/// A row of a breakdown: a dot of [color], [label], [value], and a bar of
+/// its [share] (0 to 1) that grows in.
+class ConsoleShareRow extends StatelessWidget {
+  final Color color;
+  final String label;
+  final String value;
+  final double share;
+
+  const ConsoleShareRow({super.key, required this.color, required this.label, required this.value, required this.share});
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = ConsoleInk.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(width: 9, height: 9, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, color: ink.body)),
+              ),
+              Text(value, style: TextStyle(fontWeight: FontWeight.w800, color: ink.heading)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: share.clamp(0, 1).toDouble()),
+              duration: reduceMotion(context) ? Duration.zero : const Duration(milliseconds: 800),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => LinearProgressIndicator(
+                value: v,
+                minHeight: 6,
+                color: color,
+                backgroundColor: color.withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A ring of [parts] (a count and its colour) with [center] inside; an
@@ -601,16 +814,27 @@ class ConsoleRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    CustomPaint ring(double t) => CustomPaint(
+          size: Size.square(size),
+          painter: _RingPainter(parts: parts, empty: context.brand.glassBorder, stroke: stroke, progress: t),
+        );
     return SizedBox(
       width: size,
       height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          CustomPaint(
-            size: Size.square(size),
-            painter: _RingPainter(parts: parts, empty: context.brand.glassBorder, stroke: stroke),
-          ),
+          // It sweeps round into place.
+          if (reduceMotion(context))
+            ring(1)
+          else
+            TweenAnimationBuilder<double>(
+              key: ValueKey(Object.hashAll(parts.map((p) => p.$1))),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeOutCubic,
+              builder: (context, t, _) => ring(t),
+            ),
           center,
         ],
       ),
@@ -623,7 +847,10 @@ class _RingPainter extends CustomPainter {
   final Color empty;
   final double stroke;
 
-  _RingPainter({required this.parts, required this.empty, required this.stroke});
+  /// How far round it has swept, 0 to 1.
+  final double progress;
+
+  _RingPainter({required this.parts, required this.empty, required this.stroke, this.progress = 1});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -632,23 +859,27 @@ class _RingPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke;
-    if (total == 0) {
-      canvas.drawArc(rect, 0, 2 * math.pi, false, paint..color = empty);
-      return;
-    }
+    canvas.drawArc(rect, 0, 2 * math.pi, false, paint..color = empty);
+    if (total == 0) return;
     final shown = parts.where((p) => p.$1 > 0).length;
     final gap = shown > 1 ? 0.05 : 0.0;
+    final end = -math.pi / 2 + 2 * math.pi * progress;
     var start = -math.pi / 2;
+    paint.strokeCap = shown == 1 ? StrokeCap.butt : StrokeCap.round;
     for (final (n, color) in parts) {
       if (n == 0) continue;
       final sweep = 2 * math.pi * n / total;
-      canvas.drawArc(rect, start + gap / 2, math.max(sweep - gap, 0.001), false, paint..color = color);
+      final drawn = math.min(start + sweep, end) - start;
+      if (drawn > 0) {
+        canvas.drawArc(rect, start + gap / 2, math.max(drawn - gap, 0.001), false, paint..color = color);
+      }
       start += sweep;
     }
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.parts != parts || old.empty != empty || old.stroke != stroke;
+  bool shouldRepaint(_RingPainter old) =>
+      old.parts != parts || old.empty != empty || old.stroke != stroke || old.progress != progress;
 }
 
 /// A shortcut tile: its icon over its name, on a soft fill.
@@ -663,31 +894,35 @@ class ConsoleActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
-    return Material(
-      color: ink.tint,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
+    return HoverLift(
+      radius: 14,
+      lift: 2,
+      child: Material(
+        color: ink.tint,
         borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-          child: Column(
-            children: [
-              Badge(
-                isLabelVisible: badge > 0,
-                label: Text('$badge'),
-                backgroundColor: BrandColors.orange,
-                child: Icon(icon, color: ink.heading, size: 24),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ink.body, height: 1.25),
-              ),
-            ],
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            child: Column(
+              children: [
+                Badge(
+                  isLabelVisible: badge > 0,
+                  label: Text('$badge'),
+                  backgroundColor: BrandColors.orange,
+                  child: Icon(icon, color: ink.heading, size: 24),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ink.body, height: 1.25),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -773,151 +1008,33 @@ class ConsoleGlowButton extends StatelessWidget {
   }
 }
 
-// ─── The side menu ─────────────────────────────────────────────────────────
-
-/// The navy menu down the side (a drawer on a phone): the logo, [items]
-/// (scrolling when they don't fit), then [footer] pinned at the foot.
-class ConsoleSideNav extends StatelessWidget {
-  final List<Widget> items;
-  final List<Widget> footer;
-
-  const ConsoleSideNav({super.key, required this.items, this.footer = const []});
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF0C2152), Color(0xFF071229)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: SafeArea(
-        right: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // The logo's navy lettering wants white under it.
-              Align(
-                alignment: Alignment.centerLeft,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: Theme(data: AppTheme.light, child: const SportsHubLogo(height: 40)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 26),
-              Expanded(child: ListView(padding: EdgeInsets.zero, children: items)),
-              ...footer,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class ConsoleNavItem extends StatelessWidget {
-  final IconData icon;
+/// An orange pill with an arrow, for dark cards.
+class ConsolePillButton extends StatelessWidget {
   final String label;
-  final VoidCallback onTap;
-  final bool selected;
-  final int badge;
+  final VoidCallback onPressed;
+  final bool small;
 
-  const ConsoleNavItem({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.selected = false,
-    this.badge = 0,
-  });
+  const ConsolePillButton({super.key, required this.label, required this.onPressed, this.small = false});
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? Colors.white : Colors.white.withValues(alpha: 0.72);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                      color: BrandColors.orange.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 6))
-                ]
-              : null,
-        ),
-        child: Material(
-          color: selected ? BrandColors.orange : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
-            hoverColor: Colors.white.withValues(alpha: 0.06),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(icon, size: 21, color: color),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 14.5),
-                    ),
-                  ),
-                  if (badge > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: selected ? Colors.white : BrandColors.orange,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '$badge',
-                        style: TextStyle(
-                          color: selected ? BrandColors.orange : Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: BrandColors.orange,
+        foregroundColor: Colors.white,
+        shape: const StadiumBorder(),
+        minimumSize: Size(0, small ? 36 : 44),
+        padding: EdgeInsets.symmetric(horizontal: small ? 14 : 20, vertical: small ? 8 : 12),
+        textStyle: TextStyle(fontSize: small ? 13 : 14.5, fontWeight: FontWeight.w700, fontFamily: brandFont),
       ),
-    );
-  }
-}
-
-/// A small heading between the menu's groups.
-class ConsoleNavHeading extends StatelessWidget {
-  final String text;
-
-  const ConsoleNavHeading(this.text, {super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
-            fontSize: 11.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          Icon(Icons.arrow_forward_rounded, size: small ? 16 : 18),
+        ],
       ),
     );
   }
@@ -951,7 +1068,7 @@ class ConsoleFooter extends StatelessWidget {
               foregroundColor: ConsoleInk.of(context).body,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               minimumSize: Size.zero,
-              textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, fontFamily: gymFont),
+              textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, fontFamily: brandFont),
             ),
             child: Text(links[i].$1),
           ),
