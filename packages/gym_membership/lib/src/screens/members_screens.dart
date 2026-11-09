@@ -625,6 +625,22 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
 
   bool get _editing => widget.member != null;
 
+  String? _activePhoneConflict(String? value, DateTime today, List<GymSubscription> subscriptions) {
+    final phone = Validators.normalizePhone(value ?? '');
+    if (phone == null) return null;
+    final conflict = subscriptions
+        .where((subscription) =>
+            Validators.normalizePhone(subscription.memberPhone ?? '') == phone &&
+            subscription.gymMemberId != widget.member?.id &&
+            subscription.status == SubscriptionStatus.active &&
+            subscription.endDate != null &&
+            !subscription.endDate!.isBefore(today))
+        .toList()
+      ..sort((a, b) => b.endDate!.compareTo(a.endDate!));
+    if (conflict.isEmpty) return null;
+    return 'This number is already used by ${conflict.first.memberDisplayName} until ${formatDate(conflict.first.endDate!)}.';
+  }
+
   @override
   void dispose() {
     for (final c in [_name, _phone, _email, _occupation, _contactName, _contactPhone, _medical]) {
@@ -691,6 +707,7 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
   @override
   Widget build(BuildContext context) {
     final today = BhutanTime.today();
+    final subscriptions = ref.watch(gymSubscriptionsProvider(widget.venueId)).valueOrNull ?? const <GymSubscription>[];
     final canSell = widget.access.can(GymPermission.payments);
     Widget fields(List<Widget> children) =>
         ResponsiveGrid(minItemWidth: 260, maxColumns: 3, spacing: 14, runSpacing: 14, equalHeight: false, children: children);
@@ -709,8 +726,9 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
         keyboardType: TextInputType.phone,
         textInputAction: TextInputAction.next,
         onFieldSubmitted: (_) => _emailFocus.requestFocus(),
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         decoration: const InputDecoration(labelText: 'Phone *', hintText: '17123456', prefixIcon: Icon(Icons.call_outlined)),
-        validator: (v) => Validators.phone(v, required: true),
+        validator: (v) => Validators.phone(v, required: true) ?? _activePhoneConflict(v, today, subscriptions),
         onChanged: changed,
       ),
       TextFormField(

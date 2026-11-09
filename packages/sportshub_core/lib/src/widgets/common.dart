@@ -20,18 +20,36 @@ class AsyncValueView<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return value.when(
+    final content = value.when(
       skipLoadingOnRefresh: true,
       skipLoadingOnReload: true,
-      data: data,
-      loading: () => loading ?? const LoadingSkeleton(),
-      error: (e, _) => EmptyState(
-        icon: Icons.cloud_off_rounded,
-        title: 'Could not load this',
-        message: friendlyError(e),
-        actionLabel: onRetry == null ? null : 'Try again',
-        onAction: onRetry,
+      data: (item) => KeyedSubtree(key: const ValueKey('async-data'), child: data(item)),
+      loading: () => KeyedSubtree(key: const ValueKey('async-loading'), child: loading ?? const LoadingSkeleton()),
+      error: (e, _) => KeyedSubtree(
+        key: const ValueKey('async-error'),
+        child: EmptyState(
+          icon: Icons.cloud_off_rounded,
+          title: 'Could not load this',
+          message: friendlyError(e),
+          actionLabel: onRetry == null ? null : 'Try again',
+          onAction: onRetry,
+        ),
       ),
+    );
+    if (reduceMotion(context)) return content;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.015), end: Offset.zero).animate(animation),
+          child: child,
+        ),
+      ),
+      child: content,
     );
   }
 }

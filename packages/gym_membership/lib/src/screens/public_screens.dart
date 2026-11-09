@@ -25,6 +25,11 @@ class _GymListScreenState extends ConsumerState<GymListScreen> {
     const query = (type: gymVenueType, dzongkhag: null);
     return AppPage(
       title: 'Gyms on SportsHub',
+      leading: IconButton(
+        tooltip: 'Back to SportsHub home',
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => context.go(CoreRoutes.root),
+      ),
       body: AsyncValueView<List<Venue>>(
         value: ref.watch(publicVenuesProvider(query)),
         onRetry: () => ref.invalidate(publicVenuesProvider(query)),

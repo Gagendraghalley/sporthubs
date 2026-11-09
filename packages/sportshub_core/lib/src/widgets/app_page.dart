@@ -9,6 +9,7 @@ import '../shell/app_shell.dart';
 import '../shell/service_nav.dart';
 import '../theme/brand.dart';
 import '../theme/theme_mode.dart';
+import 'motion.dart';
 
 /// Every page's frame: a frosted-glass app bar with the page blurred behind
 /// it as it scrolls, over SportsHub's soft background. The content uses the
@@ -85,10 +86,13 @@ class AppPage extends StatelessWidget {
         ],
         leading: lead,
       ),
-      body: BrandBackdrop(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth ?? wideWidth), child: body),
+      body: ScrollProgressOverlay(
+        top: MediaQuery.paddingOf(context).top + kToolbarHeight - 2,
+        child: BrandBackdrop(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth ?? wideWidth), child: body),
+          ),
         ),
       ),
       floatingActionButton: floatingActionButton,

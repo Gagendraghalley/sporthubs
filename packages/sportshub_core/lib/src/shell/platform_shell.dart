@@ -115,7 +115,7 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
             child: AppShellScope(
               openMenu: beside ? null : () => _scaffold.currentState?.openDrawer(),
               service: active,
-              child: widget.child,
+              child: FadeSlideIn(key: ValueKey(location), offset: 24, child: widget.child),
             ),
           ),
         ],

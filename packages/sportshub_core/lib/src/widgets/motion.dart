@@ -10,6 +10,106 @@ import '../theme/brand.dart';
 /// Whether the device asks for less motion.
 bool reduceMotion(BuildContext context) => MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 
+/// A thin progress rail that follows the page as its main scrollable moves.
+/// Inspired by the section-progress cue on long-form 108.bt pages.
+class ScrollProgressOverlay extends StatefulWidget {
+  final Widget child;
+  final double top;
+
+  const ScrollProgressOverlay({super.key, required this.child, required this.top});
+
+  @override
+  State<ScrollProgressOverlay> createState() => _ScrollProgressOverlayState();
+}
+
+class _ScrollProgressOverlayState extends State<ScrollProgressOverlay> {
+  double _progress = 0;
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.depth != 0 || notification is! ScrollUpdateNotification) return false;
+    final range = notification.metrics.maxScrollExtent;
+    final next = range <= 0 ? 0.0 : (notification.metrics.extentBefore / range).clamp(0.0, 1.0).toDouble();
+    if ((next - _progress).abs() > 0.004) setState(() => _progress = next);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScroll,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.child,
+          Positioned(
+            top: widget.top,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: ExcludeSemantics(
+                child: AnimatedOpacity(
+                  opacity: _progress > 0 ? 1 : 0,
+                  duration: reduceMotion(context) ? Duration.zero : const Duration(milliseconds: 160),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: _progress),
+                    duration: reduceMotion(context) ? Duration.zero : const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, _) => SizedBox(
+                      height: 10,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: 4,
+                            child: Container(
+                              height: 2,
+                              decoration: BoxDecoration(
+                                color: BrandColors.orange.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: value,
+                              child: Container(
+                                height: 3,
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(colors: [BrandColors.orange, Color(0xFFFFB16E)]),
+                                  borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment(value * 2 - 1, 0),
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: BrandColors.orange,
+                                shape: BoxShape.circle,
+                                boxShadow: [BoxShadow(color: BrandColors.orange.withValues(alpha: 0.4), blurRadius: 8)],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A number that counts up to [value] when it first shows, and glides to a
 /// new one when it changes. [format] writes it: `(v) => formatNu(v.round())`.
 class AnimatedCount extends StatelessWidget {
@@ -65,7 +165,7 @@ class HoverLift extends StatefulWidget {
   final double radius;
   final bool enabled;
 
-  const HoverLift({super.key, required this.child, this.lift = 3, this.radius = 20, this.enabled = true});
+  const HoverLift({super.key, required this.child, this.lift = 6, this.radius = 20, this.enabled = true});
 
   @override
   State<HoverLift> createState() => _HoverLiftState();
@@ -73,30 +173,41 @@ class HoverLift extends StatefulWidget {
 
 class _HoverLiftState extends State<HoverLift> {
   bool _hover = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
-    final up = _hover && !reduceMotion(context);
+    final motion = !reduceMotion(context);
+    final up = _hover && motion;
+    final pressed = _pressed && motion;
+    final scale = pressed ? 0.985 : up ? 1.025 : 1.0;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        transform: Matrix4.translationValues(0, up ? -widget.lift : 0, 0),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(widget.radius),
-          boxShadow: [
-            BoxShadow(
-              color: (dark ? Colors.black : BrandColors.navy).withValues(alpha: up ? (dark ? 0.35 : 0.12) : 0),
-              blurRadius: 28,
-              offset: const Offset(0, 12),
-            ),
-          ],
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.translationValues(0, up ? -widget.lift : pressed ? 1.0 : 0.0, 0)
+            ..multiply(Matrix4.diagonal3Values(scale, scale, 1)),
+          transformAlignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.radius),
+            boxShadow: [
+              BoxShadow(
+                color: (dark ? Colors.black : BrandColors.navy).withValues(alpha: up ? (dark ? 0.38 : 0.18) : 0),
+                blurRadius: up ? 30 : 0,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: widget.child,
         ),
-        child: widget.child,
       ),
     );
   }
@@ -108,14 +219,14 @@ class FadeSlideIn extends StatefulWidget {
   final Duration delay;
   final double offset;
 
-  const FadeSlideIn({super.key, required this.child, this.delay = Duration.zero, this.offset = 14});
+  const FadeSlideIn({super.key, required this.child, this.delay = Duration.zero, this.offset = 22});
 
   @override
   State<FadeSlideIn> createState() => _FadeSlideInState();
 }
 
 class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStateMixin {
-  static const _length = Duration(milliseconds: 420);
+  static const _length = Duration(milliseconds: 520);
   late final AnimationController _controller =
       AnimationController(vsync: this, duration: widget.delay + _length);
   late final Animation<double> _t = CurvedAnimation(
@@ -147,17 +258,23 @@ class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStat
     return AnimatedBuilder(
       animation: _t,
       child: widget.child,
-      builder: (context, child) => Opacity(
-        opacity: _t.value,
-        child: Transform.translate(offset: Offset(0, widget.offset * (1 - _t.value)), child: child),
-      ),
+      builder: (context, child) {
+        final t = _t.value;
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, widget.offset * (1 - t)),
+            child: Transform.scale(scale: 0.985 + 0.015 * t, child: child),
+          ),
+        );
+      },
     );
   }
 }
 
 /// [children] arriving one after another, [step] apart (the first eight;
 /// the rest with the eighth).
-List<Widget> staggered(Iterable<Widget> children, {Duration step = const Duration(milliseconds: 55)}) {
+List<Widget> staggered(Iterable<Widget> children, {Duration step = const Duration(milliseconds: 75)}) {
   var i = 0;
   return [
     for (final c in children) FadeSlideIn(delay: step * (i < 8 ? i++ : 8), child: c),

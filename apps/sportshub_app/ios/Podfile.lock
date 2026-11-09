@@ -3,6 +3,8 @@ PODS:
     - Flutter
   - camera_avfoundation (0.0.1):
     - Flutter
+  - clipboard (3.0.9):
+    - Flutter
   - Flutter (1.0.0)
   - image_picker_ios (0.0.1):
     - Flutter
@@ -20,6 +22,7 @@ PODS:
 DEPENDENCIES:
   - app_links (from `.symlinks/plugins/app_links/ios`)
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
+  - clipboard (from `.symlinks/plugins/clipboard/ios`)
   - Flutter (from `Flutter`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
@@ -32,6 +35,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/app_links/ios"
   camera_avfoundation:
     :path: ".symlinks/plugins/camera_avfoundation/ios"
+  clipboard:
+    :path: ".symlinks/plugins/clipboard/ios"
   Flutter:
     :path: Flutter
   image_picker_ios:
@@ -48,6 +53,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741
+  clipboard: 85f02e190f24debf05943aff98c26644b2a90245
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
