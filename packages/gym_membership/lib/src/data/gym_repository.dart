@@ -158,6 +158,13 @@ class GymRepository {
     return CheckInResult.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
+  /// Checks in a member by the phone number they gave this gym. Bhutanese
+  /// eight-digit numbers and international numbers are accepted.
+  Future<CheckInResult> checkInByPhone(String venueId, String phone) async {
+    final result = await _client.rpc('gym_check_in_by_phone', params: {'venue_id': venueId, 'phone': phone});
+    return CheckInResult.fromJson(Map<String, dynamic>.from(result as Map));
+  }
+
   Future<GymDashboard> dashboard(String venueId) async {
     final result = await _client.rpc('gym_dashboard', params: {'venue_id': venueId});
     return GymDashboard.fromJson(Map<String, dynamic>.from(result as Map));

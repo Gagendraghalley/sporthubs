@@ -57,6 +57,11 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
 
   bool get _atCounter => MediaQuery.sizeOf(context).width >= 900;
 
+  bool _looksLikePhone(String value) {
+    final digits = value.trim().replaceAll(RegExp(r'[\s()+-]'), '');
+    return RegExp(r'^[0-9]{8,15}$').hasMatch(digits);
+  }
+
   /// What the viewfinder shows: ready, checking, or the last outcome for a
   /// moment (a green or red flash), then ready again.
   _ScanState _scan = _ScanState.ready;
@@ -99,9 +104,9 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
     _checkIn(raw);
   }
 
-  Future<void> _checkIn(String raw) async {
+  Future<void> _checkIn(String raw, {bool allowPhone = false}) async {
     final member = MemberQr.parse(raw);
-    if (member == null) {
+    if (member == null && !(allowPhone && _looksLikePhone(raw))) {
       setState(() {
         _result = null;
         _refused = null;
@@ -120,7 +125,9 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
     _show(_ScanState.checking);
     final repo = ref.read(gymRepositoryProvider);
     try {
-      final result = await repo.checkIn(widget.venueId, member);
+      final result = member == null
+          ? await repo.checkInByPhone(widget.venueId, raw)
+          : await repo.checkIn(widget.venueId, member);
       if (!mounted) return;
       setState(() {
         _result = result;
@@ -132,13 +139,13 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
       ref.invalidate(gymDashboardProvider(widget.venueId));
     } catch (e) {
       GymMember? refused;
-      if (member.cardToken != null) {
+      if (member?.cardToken != null) {
         try {
-          refused = await repo.registeredMemberByCard(widget.venueId, member.cardToken!);
+          refused = await repo.registeredMemberByCard(widget.venueId, member!.cardToken!);
         } catch (_) {}
-      } else if (member.code != null) {
+      } else if (member?.code != null) {
         refused = (ref.read(gymMembersProvider(widget.venueId)).valueOrNull ?? const <GymMember>[])
-            .where((m) => m.code == member.code)
+            .where((m) => m.code == member!.code)
             .firstOrNull;
       }
       if (mounted) {
@@ -176,7 +183,7 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
             children: [
               Icon(Icons.keyboard_alt_outlined, color: context.brand.muted, size: 20),
               const SizedBox(width: 8),
-              Text('No card? Type their member code', style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              Text('No card? Enter their member code or phone', style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             ],
           ),
           const SizedBox(height: 12),
@@ -191,16 +198,16 @@ class _CheckInBodyState extends ConsumerState<_CheckInBody> {
                   textCapitalization: TextCapitalization.characters,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 4),
                   decoration: InputDecoration(
-                    hintText: '4K7P9Q',
+                    hintText: 'Code or phone number',
                     hintStyle: TextStyle(letterSpacing: 4, color: context.brand.muted.withValues(alpha: 0.5)),
                     helperText: _atCounter ? 'A USB QR scanner works here too: keep the cursor in this box.' : null,
                   ),
-                  onSubmitted: (v) => _checkIn(v),
+                  onSubmitted: (v) => _checkIn(v, allowPhone: true),
                 ),
               ),
               const SizedBox(width: 10),
               FilledButton.icon(
-                onPressed: _busy ? null : () => _checkIn(_code.text),
+                onPressed: _busy ? null : () => _checkIn(_code.text, allowPhone: true),
                 icon: const Icon(Icons.login_rounded),
                 label: const Text('Check in'),
               ),
@@ -321,7 +328,7 @@ class _Waiting extends StatelessWidget {
           const SizedBox(width: 14),
           const Expanded(
             child: Text(
-              "Hold the member's QR card up to the camera, or type the code printed under it. "
+              'Scan the QR card from their phone or printed card, or enter their member code or phone number. '
               'Only a package that covers today checks them in.',
               style: TextStyle(height: 1.4),
             ),
@@ -421,8 +428,8 @@ class _ViewfinderState extends State<_Viewfinder> with SingleTickerProviderState
                             const SizedBox(height: 12),
                             Text(
                               error.errorCode == MobileScannerErrorCode.permissionDenied
-                                  ? 'Allow the camera to scan, or type the member code.'
-                                  : 'No camera here. Type the member code, or use a USB scanner.',
+                                  ? 'Allow camera access to scan, or enter the member code or phone number.'
+                                  : 'No camera here. Enter the member code or phone number, or use a USB scanner.',
                               textAlign: TextAlign.center,
                               style: const TextStyle(color: Colors.white),
                             ),

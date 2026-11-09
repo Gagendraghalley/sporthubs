@@ -616,6 +616,7 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
   late final _name = TextEditingController(text: _old?.fullName ?? '');
   late final _phone = TextEditingController(text: _old?.phone ?? '');
   late final _email = TextEditingController(text: _old?.email ?? '');
+  final _emailFocus = FocusNode();
   late final _occupation = TextEditingController(text: _old?.occupation ?? '');
   late final _contactName = TextEditingController(text: _old?.emergencyContactName ?? '');
   late final _contactPhone = TextEditingController(text: _old?.emergencyContactPhone ?? '');
@@ -636,6 +637,7 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
     for (final c in [_name, _phone, _email, _occupation, _contactName, _contactPhone, _medical]) {
       c.dispose();
     }
+    _emailFocus.dispose();
     super.dispose();
   }
 
@@ -712,12 +714,15 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
       TextFormField(
         controller: _phone,
         keyboardType: TextInputType.phone,
+        textInputAction: TextInputAction.next,
+        onFieldSubmitted: (_) => _emailFocus.requestFocus(),
         decoration: const InputDecoration(labelText: 'Phone *', hintText: '17123456', prefixIcon: Icon(Icons.call_outlined)),
         validator: (v) => Validators.phone(v, required: true),
         onChanged: changed,
       ),
       TextFormField(
         controller: _email,
+        focusNode: _emailFocus,
         keyboardType: TextInputType.emailAddress,
         decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline_rounded)),
         validator: (v) => (v ?? '').trim().isEmpty ? null : Validators.email(v),
@@ -882,6 +887,14 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
             delay: Duration(milliseconds: 50 * i),
             child: _FormSection(number: i + 1, icon: icon, title: title, subtitle: subtitle, done: done[i], child: child),
           ),
+        if (wide)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [cancel, const SizedBox(width: 8), SizedBox(width: 220, child: submit)],
+            ),
+          ),
       ],
     );
 
@@ -933,7 +946,6 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
                           curve: Curves.easeOutCubic,
                           alignment: 0.05,
                         ),
-                        actions: [SizedBox(width: double.infinity, child: submit), const SizedBox(height: 6), cancel],
                       ),
                     ),
                   ),
@@ -1017,8 +1029,8 @@ class _FormSection extends StatelessWidget {
 }
 
 /// Beside the form on a computer: the member as they'll be registered (photo,
-/// name, package, expiry date, amount), how complete the form is, a way to
-/// each section, and saving.
+/// name, package, expiry date, amount), how complete the form is, and a way to
+/// each section.
 class _RegisterSummary extends StatelessWidget {
   final String name;
   final String phone;
@@ -1030,7 +1042,6 @@ class _RegisterSummary extends StatelessWidget {
   final double progress;
   final List<({String title, bool done})> sections;
   final ValueChanged<int> onSection;
-  final List<Widget> actions;
 
   const _RegisterSummary({
     required this.name,
@@ -1043,7 +1054,6 @@ class _RegisterSummary extends StatelessWidget {
     required this.progress,
     required this.sections,
     required this.onSection,
-    required this.actions,
   });
 
   @override
@@ -1139,8 +1149,6 @@ class _RegisterSummary extends StatelessWidget {
                 ),
               ),
             ),
-          const SizedBox(height: 16),
-          ...actions,
         ],
       ),
     );

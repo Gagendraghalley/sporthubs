@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:clipboard/clipboard.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sportshub_core/sportshub_core.dart';
@@ -43,6 +44,7 @@ class MemberCardPanel extends ConsumerStatefulWidget {
 
 class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
   final _cardKey = GlobalKey();
+  final _qrKey = GlobalKey();
   bool _busy = false;
 
   GymMember get m => widget.member;
@@ -66,6 +68,7 @@ class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
               photo: photo?.valueOrNull,
               package: _until == null ? widget.noPackage : 'Valid until $_until',
               repaintKey: _cardKey,
+              qrRepaintKey: _qrKey,
             ),
           ),
         ),
@@ -75,15 +78,15 @@ class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton.icon(
-              onPressed: ready ? _sendCard : null,
-              icon: Icon(kIsWeb ? Icons.download_rounded : Icons.ios_share_rounded),
-              label: Text(kIsWeb ? 'Download card' : 'Share card'),
-            ),
             OutlinedButton.icon(
+              onPressed: ready ? _copyQrCode : null,
+              icon: const Icon(Icons.content_copy_rounded),
+              label: const Text('Copy QR code'),
+            ),
+            FilledButton.icon(
               onPressed: () => openWhatsApp(context, m.phone, message: _message),
               icon: const Icon(Icons.chat_outlined),
-              label: const Text('WhatsApp'),
+              label: const Text('WhatsApp message'),
             ),
             if (widget.canReissue)
               TextButton.icon(
@@ -95,26 +98,28 @@ class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
         ),
         const SizedBox(height: 8),
         const FormHint(
-          kIsWeb
-              ? 'Download the card, then WhatsApp opens their chat with a message ready: attach the card and send.'
-              : 'Share the card straight to WhatsApp, or open their chat with a message ready.',
+          'Copy the QR image first, then open WhatsApp and paste it into the chat with the welcome message.',
         ),
       ],
     );
   }
 
-  Future<void> _sendCard() async {
+  Future<void> _copyQrCode() async {
     setState(() => _busy = true);
     try {
-      final png = await cardPicture(_cardKey);
-      if (!mounted) return;
-      if (kIsWeb) {
-        await downloadCard(png, m);
-      } else {
-        await shareCard(context, png, member: m, message: _message);
+      final png = await cardPicture(_qrKey);
+      await FlutterClipboard.copyImage(png);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('QR code copied. Paste it into WhatsApp.')),
+        );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not copy the QR image: ${friendlyError(e)}')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -149,6 +154,7 @@ class RegisteredMemberCard extends StatelessWidget {
   /// 'Valid until 8 Feb 2027', or what they should do to get one.
   final String package;
   final GlobalKey? repaintKey;
+  final GlobalKey? qrRepaintKey;
 
   const RegisteredMemberCard({
     super.key,
@@ -157,6 +163,7 @@ class RegisteredMemberCard extends StatelessWidget {
     required this.package,
     this.photo,
     this.repaintKey,
+    this.qrRepaintKey,
   });
 
   static const width = 340.0;
@@ -210,15 +217,18 @@ class RegisteredMemberCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: white, borderRadius: BorderRadius.circular(18)),
-              child: QrImageView(
-                data: MemberQr.encodeCard(member.qrToken),
-                size: 190,
-                backgroundColor: white,
-                padding: EdgeInsets.zero,
-                semanticsLabel: "${member.fullName}'s member QR code",
+            RepaintBoundary(
+              key: qrRepaintKey,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: white, borderRadius: BorderRadius.circular(18)),
+                child: QrImageView(
+                  data: MemberQr.encodeCard(member.qrToken),
+                  size: 190,
+                  backgroundColor: white,
+                  padding: EdgeInsets.zero,
+                  semanticsLabel: "${member.fullName}'s member QR code",
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -302,7 +312,7 @@ Future<void> shareCard(BuildContext context, Uint8List png, {required GymMember 
   await SharePlus.instance.share(ShareParams(
     files: [XFile.fromData(png, mimeType: 'image/png', name: name)],
     fileNameOverrides: [name],
-    text: kIsWeb ? null : message,
+    text: message,
     subject: 'Your member card',
     sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
   ));
