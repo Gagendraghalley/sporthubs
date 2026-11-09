@@ -83,7 +83,7 @@ class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
               icon: const Icon(Icons.content_copy_rounded),
               label: const Text('Copy QR code'),
             ),
-            FilledButton.icon(
+            OutlinedButton.icon(
               onPressed: () => openWhatsApp(context, m.phone, message: _message),
               icon: const Icon(Icons.chat_outlined),
               label: const Text('WhatsApp message'),
@@ -98,7 +98,7 @@ class _MemberCardPanelState extends ConsumerState<MemberCardPanel> {
         ),
         const SizedBox(height: 8),
         const FormHint(
-          'Copy the QR image first, then open WhatsApp and paste it into the chat with the welcome message.',
+          'Copy the QR image, then paste it into the WhatsApp chat with the welcome message.',
         ),
       ],
     );

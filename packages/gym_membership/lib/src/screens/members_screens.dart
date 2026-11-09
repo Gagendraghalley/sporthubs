@@ -464,14 +464,7 @@ class _MembersTable extends StatelessWidget {
                 ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'WhatsApp ${firstName(r.member.fullName)}',
-                      icon: const Icon(Icons.chat_outlined, size: 20),
-                      onPressed: () => openWhatsApp(context, r.member.phone),
-                    ),
-                    Icon(Icons.chevron_right_rounded, color: muted),
-                  ],
+                  children: [Icon(Icons.chevron_right_rounded, color: muted)],
                 ),
               ]),
             ),
