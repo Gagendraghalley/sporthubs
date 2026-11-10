@@ -235,7 +235,7 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0C2152), BrandColors.night],
+          colors: [BrandColors.slateNavy, BrandColors.navy],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),

@@ -7,16 +7,19 @@ const brandFont = 'packages/sportshub_core/PlusJakartaSans';
 /// SportsHub's colours, from the logo: navy 'Sport', orange 'Hub' and the
 /// blue of the 'S'.
 abstract final class BrandColors {
-  static const navy = Color(0xFF0A1C45);
-  static const orange = Color(0xFFF86A0C);
+  static const navy = Color(0xFF0B1530);
+  static const slateNavy = Color(0xFF151F35);
+  static const orange = Color(0xFFFF790F);
+  static const orangeText = Color(0xFFB54708);
   static const blue = Color(0xFF1F6FD6);
   static const green = Color(0xFF1B8A4B);
   static const amber = Color(0xFFB7791F);
   static const red = Color(0xFFC62828);
+  static const mutedSlate = Color(0xFF94A3B8);
 
   /// The deep navy of the side menu and the splash screen, top to bottom.
-  static const midnight = Color(0xFF0C2152);
-  static const night = Color(0xFF071229);
+  static const midnight = navy;
+  static const night = Color(0xFF080F20);
 }
 
 /// The frosted-glass look: translucent bars and cards over a soft
@@ -60,29 +63,29 @@ class Brand extends ThemeExtension<Brand> {
   static const light = Brand(
     background: Color(0xFFF3F6FB),
     glowA: Color(0x332F7BE0),
-    glowB: Color(0x26F86A0C),
+    glowB: Color(0x26FF790F),
     glass: Color(0xB8FFFFFF),
-    glassBorder: Color(0x1F0A1C45),
+    glassBorder: Color(0x1F0B1530),
     card: Color(0xE6FFFFFF),
     accent: BrandColors.orange,
     success: BrandColors.green,
     warning: BrandColors.amber,
     danger: BrandColors.red,
-    muted: Color(0xFF5B6478),
+    muted: Color(0xFF64748B),
   );
 
   static const dark = Brand(
-    background: Color(0xFF070C18),
+    background: BrandColors.navy,
     glowA: Color(0x332F7BE0),
-    glowB: Color(0x1FF86A0C),
-    glass: Color(0xB30B1224),
+    glowB: Color(0x1FFF790F),
+    glass: Color(0xB3151F35),
     glassBorder: Color(0x24FFFFFF),
-    card: Color(0xE6111A2E),
-    accent: Color(0xFFFF8A3D),
+    card: Color(0xE6151F35),
+    accent: BrandColors.orange,
     success: Color(0xFF4CC983),
     warning: Color(0xFFE8B04B),
     danger: Color(0xFFFF6B6B),
-    muted: Color(0xFF9AA4B8),
+    muted: BrandColors.mutedSlate,
   );
 
   @override

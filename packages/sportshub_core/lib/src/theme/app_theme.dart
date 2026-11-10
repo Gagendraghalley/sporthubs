@@ -12,7 +12,7 @@ abstract final class AppTheme {
           primary: BrandColors.navy,
           onPrimary: Colors.white,
           secondary: BrandColors.orange,
-          onSecondary: Colors.white,
+          onSecondary: BrandColors.navy,
           tertiary: BrandColors.blue,
           surface: Colors.white,
         ),
@@ -23,12 +23,12 @@ abstract final class AppTheme {
         ColorScheme.fromSeed(
           seedColor: BrandColors.navy,
           brightness: Brightness.dark,
-          primary: const Color(0xFF9CC2FF),
+          primary: BrandColors.orange,
           onPrimary: BrandColors.navy,
-          secondary: const Color(0xFFFF8A3D),
-          onSecondary: Colors.black,
+          secondary: const Color(0xFF9CC2FF),
+          onSecondary: BrandColors.navy,
           tertiary: const Color(0xFF7FB0F5),
-          surface: const Color(0xFF111A2E),
+          surface: BrandColors.slateNavy,
         ),
       );
 

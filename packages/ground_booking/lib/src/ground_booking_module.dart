@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportshub_core/sportshub_core.dart';
 
@@ -76,6 +77,22 @@ class GroundBookingModule extends SportsHubModule {
           externalUrl: page(tournaments),
         ),
       ];
+
+  @override
+  ServiceNav? navigation(WidgetRef ref, String location) => ServiceNav(
+        key: key,
+        name: name,
+        icon: icon,
+        color: BrandColors.blue,
+        tagline: 'Futsal · football · basketball · badminton',
+        sections: [
+          NavSection(items: [
+            NavDestination(label: 'Book a ground', icon: Icons.sports_soccer_rounded, externalUrl: page(grounds)),
+            NavDestination(label: 'Tournaments', icon: Icons.emoji_events_outlined, externalUrl: page(tournaments)),
+          ]),
+        ],
+        isSetUp: true,
+      );
 }
 
 /// A ground booking page opened in SportsHub: for now, it hands over to the

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sportshub_core/sportshub_core.dart';
@@ -7,22 +8,19 @@ import '../gym_routes.dart';
 import '../widgets/gym_art.dart';
 import '../widgets/gym_type.dart';
 
-/// Welcome while gym membership is SportsHub's lead service: the landing page
-/// for visitors. A bar over the top; the headline beside a membership card on
-/// a phone; what SportsHub does; the services (gyms now, more sports to
-/// come); why SportsHub; five steps to start; a last call; the footer. One
-/// column at a phone's width; light and dark like the rest of the app.
+/// The landing page for visitors, with a multi-sport introduction and service
+/// links supplied by the modules enabled for this installation.
 ///
 /// Everything it claims is what the app does today: no member counts or
 /// quotes until there are real ones.
-class GymWelcomePage extends StatefulWidget {
+class GymWelcomePage extends ConsumerStatefulWidget {
   const GymWelcomePage({super.key});
 
   @override
-  State<GymWelcomePage> createState() => _GymWelcomePageState();
+  ConsumerState<GymWelcomePage> createState() => _GymWelcomePageState();
 }
 
-class _GymWelcomePageState extends State<GymWelcomePage> {
+class _GymWelcomePageState extends ConsumerState<GymWelcomePage> {
   final _scroll = ScrollController();
   final _servicesKey = GlobalKey();
   final _aboutKey = GlobalKey();
@@ -70,8 +68,10 @@ class _GymWelcomePageState extends State<GymWelcomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // The top's photo, ready before it's seen.
-    precacheImage(GymPhoto.provider('hero'), context);
+    // The sport photos, ready before the hero mosaic is seen.
+    for (final photo in const ['outdoor', 'indoor', 'racket', 'swimming']) {
+      precacheImage(GymPhoto.provider(photo), context);
+    }
   }
 
   @override
@@ -80,6 +80,15 @@ class _GymWelcomePageState extends State<GymWelcomePage> {
   }
 
   Widget _page(_Layout layout) {
+    final modules = ref.watch(enabledModulesProvider).valueOrNull ?? const <SportsHubModule>[];
+    final appModules = ref.watch(appModulesProvider).valueOrNull ?? const <AppModuleRow>[];
+    final enabledKeys = appModules.where((module) => module.isEnabled).map((module) => module.key).toSet();
+    final serviceLinks = modules
+        .where((module) => enabledKeys.contains(module.key))
+        .expand((module) => module.playerMenuItems())
+        .where((item) => item.isExternal)
+        .toList();
+
     return Scaffold(
       backgroundColor: context.brand.background,
       body: Stack(
@@ -92,7 +101,14 @@ class _GymWelcomePageState extends State<GymWelcomePage> {
                 children: [
                   _Hero(layout: layout, onGetStarted: _signUp, onExplore: () => _scrollTo(_servicesKey)),
                   _Highlights(layout: layout),
-                  _Reveal(child: _Services(key: _servicesKey, layout: layout, onFindGym: _findGym)),
+                  _Reveal(
+                    child: _Services(
+                      key: _servicesKey,
+                      layout: layout,
+                      serviceLinks: serviceLinks,
+                      onFindGym: _findGym,
+                    ),
+                  ),
                   _Reveal(child: _About(key: _aboutKey, layout: layout, onKnowMore: () => _scrollTo(_stepsKey))),
                   _Reveal(child: _Steps(key: _stepsKey, layout: layout)),
                   _Reveal(child: _Plans(key: _plansKey, layout: layout, onFindGym: _findGym)),
@@ -299,7 +315,10 @@ class _NavBar extends StatelessWidget {
                         onPressed: onTap,
                         style: TextButton.styleFrom(
                           foregroundColor: ink.heading,
-                          textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
+                          textStyle: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
                         child: Text(label),
@@ -343,7 +362,7 @@ class _Hero extends StatelessWidget {
   const _Hero({required this.layout, required this.onGetStarted, required this.onExplore});
 
   /// Behind the words, and what the photo fades into.
-  static Color background(bool dark) => dark ? const Color(0xFF0A1734) : const Color(0xFFEEF3FA);
+  static Color background(bool dark) => dark ? BrandColors.navy : const Color(0xFFEEF3FA);
 
   @override
   Widget build(BuildContext context) {
@@ -353,13 +372,16 @@ class _Hero extends StatelessWidget {
     final words = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _Eyebrow('GYM MEMBERSHIP PLATFORM', lineAfter: true),
+        const _Eyebrow('SPORTS & FITNESS PLATFORM', lineAfter: true),
         const SizedBox(height: 18),
         Text.rich(
           TextSpan(
             children: [
-              const TextSpan(text: 'Your Fitness\nPartner '),
-              TextSpan(text: 'in Bhutan', style: TextStyle(color: ink.dark ? const Color(0xFFFF8A3D) : BrandColors.orange)),
+              const TextSpan(text: 'One Platform.\nEvery Sport.\n'),
+              TextSpan(
+                text: 'Endless Possibilities.',
+                style: TextStyle(color: ink.dark ? BrandColors.orange : BrandColors.orangeText),
+              ),
             ],
           ),
           style: TextStyle(
@@ -375,8 +397,8 @@ class _Hero extends StatelessWidget {
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 500),
           child: Text(
-            'Find a gym near you, join a plan and check in with your phone. '
-            'Your membership, payments and visits, all in one place.',
+            'Discover gyms, manage memberships and track visits in SportsHub. '
+            'Connected sports services help bring facilities and activities across Bhutan together.',
             style: TextStyle(fontSize: layout.wide ? 18.5 : 16.5, height: 1.6, color: ink.body),
           ),
         ),
@@ -394,7 +416,7 @@ class _Hero extends StatelessWidget {
           spacing: 22,
           runSpacing: 10,
           children: [
-            for (final point in const ['Free account', 'Pay in cash or mBoB', 'QR check-in'])
+            for (final point in const ['Made for Bhutan', 'Gym memberships live', 'Built for every sport'])
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -431,7 +453,7 @@ class _Hero extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              const GymPhoto('hero', alignment: Alignment(0.15, -0.3)),
+              const _SportPhotoMosaic(),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -519,7 +541,7 @@ class _Hero extends StatelessWidget {
                           child: const Stack(
                             fit: StackFit.expand,
                             children: [
-                              GymPhoto('hero', alignment: Alignment(0.3, -0.4)),
+                              _SportPhotoMosaic(),
                               IgnorePointer(child: CustomPaint(painter: GymStripesPainter())),
                             ],
                           ),
@@ -528,7 +550,8 @@ class _Hero extends StatelessWidget {
                       Positioned(
                         left: 12,
                         bottom: 0,
-                        child: Transform.scale(scale: layout.medium ? 1 : 0.86, alignment: Alignment.bottomLeft, child: const _MiniCard()),
+                        child: Transform.scale(
+                            scale: layout.medium ? 1 : 0.86, alignment: Alignment.bottomLeft, child: const _MiniCard()),
                       ),
                       const Positioned(
                         right: 12,
@@ -552,6 +575,71 @@ class _Hero extends StatelessWidget {
   }
 }
 
+/// A multi-sport hero assembled from the sports photography already in the app.
+/// The photographs stay local, so the landing page does not depend on a
+/// remote image service or delay while it loads.
+class _SportPhotoMosaic extends StatelessWidget {
+  const _SportPhotoMosaic();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const GymPhoto('outdoor', alignment: Alignment(0.55, 0)),
+            Positioned(
+              left: width * 0.035,
+              top: height * 0.06,
+              width: width * 0.34,
+              height: height * 0.40,
+              child: const _SportPhotoTile(photo: 'indoor'),
+            ),
+            Positioned(
+              right: width * 0.05,
+              top: height * 0.15,
+              width: width * 0.37,
+              height: height * 0.42,
+              child: const _SportPhotoTile(photo: 'racket'),
+            ),
+            Positioned(
+              left: width * 0.29,
+              bottom: height * 0.06,
+              width: width * 0.38,
+              height: height * 0.36,
+              child: const _SportPhotoTile(photo: 'swimming'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SportPhotoTile extends StatelessWidget {
+  final String photo;
+
+  const _SportPhotoTile({required this.photo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
+        boxShadow: const [BoxShadow(color: Color(0x3507152E), blurRadius: 20, offset: Offset(0, 10))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: GymPhoto(photo),
+      ),
+    );
+  }
+}
+
 /// The top's foot: low on the left, rising to the right.
 class _WaveClipper extends CustomClipper<Path> {
   @override
@@ -569,7 +657,7 @@ class _WaveClipper extends CustomClipper<Path> {
   bool shouldReclip(_WaveClipper oldClipper) => false;
 }
 
-/// A member's card as My gym shows it: the gym, days left and the QR code.
+/// An illustrative member card; its sample QR is not a real member credential.
 class _MiniCard extends StatelessWidget {
   const _MiniCard();
 
@@ -582,12 +670,14 @@ class _MiniCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
           gradient: const LinearGradient(
-            colors: [Color(0xF20A1C45), Color(0xF21F4FA8)],
+            colors: [Color(0xF20B1530), Color(0xF21F4FA8)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 36, offset: const Offset(0, 18))],
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 36, offset: const Offset(0, 18))
+          ],
         ),
         child: Row(
           children: [
@@ -599,7 +689,7 @@ class _MiniCard extends StatelessWidget {
                     children: [
                       const Flexible(
                         child: Text(
-                          'Your gym',
+                          'Example member card',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
@@ -608,35 +698,25 @@ class _MiniCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: BrandColors.green, borderRadius: BorderRadius.circular(20)),
+                        decoration: BoxDecoration(color: BrandColors.blue, borderRadius: BorderRadius.circular(20)),
                         child: const Text(
-                          'Active',
+                          'Sample',
                           style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('1 month plan', style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
+                  Text('Gym membership', style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
                   const SizedBox(height: 10),
                   const Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text('23', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800, height: 1)),
+                      Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 25),
                       SizedBox(width: 6),
-                      Flexible(child: Text('days left', style: TextStyle(color: Colors.white70, fontSize: 13))),
+                      Flexible(
+                          child: Text('QR check-in preview', style: TextStyle(color: Colors.white70, fontSize: 13))),
                     ],
-                  ),
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: const LinearProgressIndicator(
-                      value: 0.25,
-                      minHeight: 5,
-                      color: BrandColors.orange,
-                      backgroundColor: Colors.white24,
-                    ),
                   ),
                 ],
               ),
@@ -646,11 +726,12 @@ class _MiniCard extends StatelessWidget {
               padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
               child: QrImageView(
-                data: 'SPORTSHUB',
+                data: 'EXAMPLE ONLY',
                 size: 78,
                 padding: EdgeInsets.zero,
                 eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: BrandColors.navy),
-                dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: BrandColors.navy),
+                dataModuleStyle:
+                    const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: BrandColors.navy),
               ),
             ),
           ],
@@ -680,7 +761,10 @@ class _FloatingNote extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: context.brand.glassBorder),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: ink.dark ? 0.4 : 0.18), blurRadius: 28, offset: const Offset(0, 12)),
+            BoxShadow(
+                color: Colors.black.withValues(alpha: ink.dark ? 0.4 : 0.18),
+                blurRadius: 28,
+                offset: const Offset(0, 12)),
           ],
         ),
         child: Row(
@@ -807,7 +891,7 @@ class _Highlights extends StatelessWidget {
         child: Container(
           padding: EdgeInsets.symmetric(vertical: 24, horizontal: layout.wide ? 8 : 16),
           decoration: BoxDecoration(
-            color: ink.dark ? const Color(0xFF111A2E) : Colors.white,
+            color: ink.dark ? BrandColors.slateNavy : Colors.white,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: brand.glassBorder),
             boxShadow: [
@@ -887,12 +971,14 @@ class _Service {
   const _Service(this.name, this.icon, this.photo, {this.open = false});
 }
 
-/// More than a gym: gyms now (they open Find a gym), and the sports coming.
+/// Services currently available in SportsHub and links contributed by the
+/// enabled service modules.
 class _Services extends StatelessWidget {
   final _Layout layout;
+  final List<ModuleMenuItem> serviceLinks;
   final VoidCallback onFindGym;
 
-  const _Services({super.key, required this.layout, required this.onFindGym});
+  const _Services({super.key, required this.layout, required this.serviceLinks, required this.onFindGym});
 
   static const services = [
     _Service('Gym & Fitness', Icons.fitness_center_rounded, 'gym', open: true),
@@ -912,7 +998,7 @@ class _Services extends StatelessWidget {
         const _Eyebrow('OUR SERVICES', lineBefore: true),
         const SizedBox(height: 14),
         Text(
-          'More Than a Gym',
+          'Explore Sports & Services',
           style: TextStyle(
             fontSize: layout.titleSize,
             fontWeight: FontWeight.w900,
@@ -923,12 +1009,26 @@ class _Services extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'From fitness to sports, SportsHub brings everything you need under one platform. '
-          'Gyms are open now, and more sports are on the way.',
+          serviceLinks.isEmpty
+              ? 'Manage gym memberships and check-ins in SportsHub. The platform is built to connect more sports and facilities across Bhutan.'
+              : 'Manage gym memberships and check-ins in SportsHub. Ground booking and tournaments open on their existing service for now.',
           style: TextStyle(fontSize: 17, height: 1.55, color: ink.body),
         ),
         const SizedBox(height: 28),
-        _PillButton(label: 'Find a gym', icon: Icons.arrow_forward_rounded, onPressed: onFindGym),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _PillButton(label: 'Find a gym', icon: Icons.arrow_forward_rounded, onPressed: onFindGym),
+            for (final link in serviceLinks)
+              _PillButton(
+                label: link.title,
+                icon: link.icon,
+                outlined: true,
+                onPressed: () => link.open(context),
+              ),
+          ],
+        ),
       ],
     );
     final tiles = _Grid(
@@ -1096,7 +1196,7 @@ class _About extends StatelessWidget {
         const _Eyebrow('ABOUT SPORTSHUB', lineBefore: true),
         const SizedBox(height: 14),
         Text(
-          'Build a Healthier,\nStronger You',
+          'The Digital Home for\nSports & Fitness',
           style: TextStyle(
             fontSize: layout.titleSize,
             fontWeight: FontWeight.w900,
@@ -1107,8 +1207,8 @@ class _About extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'SportsHub is a fitness platform made for Bhutan. It starts with gyms: find one, join a plan '
-          'and check in with your phone. Sports facilities and wellness are on the way.',
+          'SportsHub connects people, facilities and sports services through one platform built for Bhutan. '
+          'Gym memberships are managed here, while enabled sports services connect members to their existing tools.',
           style: TextStyle(fontSize: 16, height: 1.55, color: ink.body),
         ),
         const SizedBox(height: 16),
@@ -1211,7 +1311,8 @@ class _AboutArt extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
-                    BoxShadow(color: BrandColors.navy.withValues(alpha: 0.25), blurRadius: 30, offset: const Offset(0, 16)),
+                    BoxShadow(
+                        color: BrandColors.navy.withValues(alpha: 0.25), blurRadius: 30, offset: const Offset(0, 16)),
                   ],
                 ),
                 child: ClipRRect(
@@ -1234,7 +1335,8 @@ class _AboutArt extends StatelessWidget {
                         bottom: -height * 0.5,
                         child: Transform.rotate(
                           angle: 0.6,
-                          child: Container(width: 54, height: height * 1.2, color: BrandColors.orange.withValues(alpha: 0.9)),
+                          child: Container(
+                              width: 54, height: height * 1.2, color: BrandColors.orange.withValues(alpha: 0.9)),
                         ),
                       ),
                     ],
@@ -1466,7 +1568,8 @@ class _Plans extends StatelessWidget {
       ['Reminder 3 days before the end', 'Renew without losing days'],
       featured: true,
     ),
-    _PlanKind('Long Term', 'For the committed', '6 months · 1 year', ['Your card and visits in one place', 'Fewer renewals to think of']),
+    _PlanKind('Long Term', 'For the committed', '6 months · 1 year',
+        ['Your card and visits in one place', 'Fewer renewals to think of']),
   ];
 
   @override
@@ -1549,12 +1652,16 @@ class _PlanCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: kind.featured ? Color.alphaBlend(orangeTint, ink.dark ? const Color(0xFF111A2E) : Colors.white) : null,
+        color: kind.featured ? Color.alphaBlend(orangeTint, ink.dark ? BrandColors.slateNavy : Colors.white) : null,
         gradient: kind.featured
             ? null
-            : LinearGradient(colors: ink.dark ? const [Color(0xFF111A2E), Color(0xFF111A2E)] : const [Colors.white, Colors.white]),
+            : LinearGradient(
+                colors: ink.dark
+                    ? const [BrandColors.slateNavy, BrandColors.slateNavy]
+                    : const [Colors.white, Colors.white]),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kind.featured ? BrandColors.orange : brand.glassBorder, width: kind.featured ? 1.6 : 1),
+        border:
+            Border.all(color: kind.featured ? BrandColors.orange : brand.glassBorder, width: kind.featured ? 1.6 : 1),
         boxShadow: [
           BoxShadow(
             color: (ink.dark ? Colors.black : BrandColors.navy).withValues(alpha: ink.dark ? 0.3 : 0.06),
@@ -1664,7 +1771,7 @@ class _Faq extends StatelessWidget {
     );
     final list = Container(
       decoration: BoxDecoration(
-        color: ink.dark ? const Color(0xFF111A2E) : Colors.white,
+        color: ink.dark ? BrandColors.slateNavy : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: brand.glassBorder),
       ),
@@ -1770,7 +1877,7 @@ class _LastCall extends StatelessWidget {
           child: DecoratedBox(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF0A1C45), Color(0xFF15295A)],
+                colors: [BrandColors.navy, BrandColors.slateNavy],
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
               ),
@@ -1794,7 +1901,8 @@ class _LastCall extends StatelessWidget {
                     ),
                   ),
                 ),
-                Positioned(right: -60, top: -120, child: GymGlow(color: BrandColors.orange.withValues(alpha: 0.3), size: 320)),
+                Positioned(
+                    right: -60, top: -120, child: GymGlow(color: BrandColors.orange.withValues(alpha: 0.3), size: 320)),
                 Padding(
                   padding: EdgeInsets.all(layout.wide ? 48 : 28),
                   child: layout.medium
@@ -1850,7 +1958,7 @@ class _Footer extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0A1C45), Color(0xFF071229)],
+          colors: [BrandColors.navy, BrandColors.night],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -1904,12 +2012,30 @@ class _MountainsPainter extends CustomPainter {
   const _MountainsPainter({required this.far, required this.near});
 
   static const _far = [
-    (0.0, 0.62), (0.07, 0.34), (0.14, 0.56), (0.23, 0.18), (0.32, 0.5), (0.41, 0.3), (0.5, 0.56),
-    (0.6, 0.12), (0.7, 0.46), (0.79, 0.24), (0.89, 0.52), (1.0, 0.3),
+    (0.0, 0.62),
+    (0.07, 0.34),
+    (0.14, 0.56),
+    (0.23, 0.18),
+    (0.32, 0.5),
+    (0.41, 0.3),
+    (0.5, 0.56),
+    (0.6, 0.12),
+    (0.7, 0.46),
+    (0.79, 0.24),
+    (0.89, 0.52),
+    (1.0, 0.3),
   ];
   static const _near = [
-    (0.0, 0.82), (0.1, 0.6), (0.2, 0.8), (0.3, 0.54), (0.42, 0.84), (0.55, 0.6), (0.66, 0.86),
-    (0.78, 0.62), (0.9, 0.82), (1.0, 0.66),
+    (0.0, 0.82),
+    (0.1, 0.6),
+    (0.2, 0.8),
+    (0.3, 0.54),
+    (0.42, 0.84),
+    (0.55, 0.6),
+    (0.66, 0.86),
+    (0.78, 0.62),
+    (0.9, 0.82),
+    (1.0, 0.66),
   ];
 
   void _range(Canvas canvas, Size size, List<(double, double)> peaks, Color color) {
@@ -2032,7 +2158,7 @@ class _PillButton extends StatelessWidget {
         onPressed: onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: color,
-          foregroundColor: Colors.white,
+          foregroundColor: BrandColors.navy,
           shape: const StadiumBorder(),
           padding: padding,
           minimumSize: minimumSize,

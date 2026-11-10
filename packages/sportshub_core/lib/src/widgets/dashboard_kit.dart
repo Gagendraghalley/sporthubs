@@ -20,7 +20,7 @@ class ConsoleInk {
 
   Color get heading => dark ? Colors.white : BrandColors.navy;
   Color get body => dark ? const Color(0xFFC5CCDA) : const Color(0xFF3A4560);
-  Color get card => dark ? const Color(0xFF111A2E) : Colors.white;
+  Color get card => dark ? BrandColors.slateNavy : Colors.white;
 
   /// Behind tiles and icons: a pale blue, or a faint white in the dark.
   Color get tint => dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF1F5FB);

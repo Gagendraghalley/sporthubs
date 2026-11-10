@@ -135,7 +135,7 @@ void main() {
     expect(find.text('4K7P9Q'), findsOneWidget);
     expect(find.text('Valid until $expiry'), findsOneWidget);
     expect(find.textContaining('Asthma'), findsOneWidget);
-    for (final action in ['Share card', 'WhatsApp', 'Register another', 'Open their page']) {
+    for (final action in ['Copy QR code', 'WhatsApp message', 'Register another', 'Open their page']) {
       expect(find.text(action), findsOneWidget, reason: action);
     }
     // Just made: no "New card" here.
