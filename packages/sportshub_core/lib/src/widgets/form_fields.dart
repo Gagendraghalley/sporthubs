@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../theme/brand.dart';
 import '../utils/dzongkhags.dart';
+import 'searchable_dropdown.dart';
 
 /// Choose a dzongkhag.
 class DzongkhagField extends StatelessWidget {
@@ -16,11 +17,10 @@ class DzongkhagField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
+    return SearchableDropdown<String>(
+      value: value,
       decoration: InputDecoration(labelText: required ? '$label *' : label),
-      items: [for (final d in dzongkhags) DropdownMenuItem(value: d, child: Text(d))],
+      options: [for (final d in dzongkhags) DropdownOption(d, d)],
       onChanged: onChanged,
       validator: required ? (v) => v == null ? 'Choose the dzongkhag' : null : null,
     );

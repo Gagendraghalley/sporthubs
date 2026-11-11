@@ -9,9 +9,9 @@ import '../theme/brand.dart';
 import '../utils/validators.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
-import '../widgets/responsive.dart';
 
 import 'venue.dart';
 import 'venue_repository.dart';
@@ -66,18 +66,11 @@ class VenueStaffScreen extends ConsumerWidget {
                         'account by their email, or make their account: they sign in with the code SportsHub emails them.'
                     : 'Who runs this venue.'),
               ),
-              ResponsiveGrid(
-                minItemWidth: 360,
-                maxColumns: 3,
-                children: [
-                  for (final s in staff)
-                    MenuTile(
-                      icon: s.role == VenueRole.owner ? Icons.workspace_premium_outlined : Icons.badge_outlined,
-                      title: s.userId == me ? '${s.name} (you)' : s.name,
-                      subtitle: [s.roleName, if (s.email != null) s.email!].join(' · '),
-                      onTap: _canChange(s, roles, me) ? () => _change(context, ref, s, roles) : null,
-                    ),
-                ],
+              _StaffTable(
+                staff: staff,
+                me: me,
+                canChange: (s) => _canChange(s, roles, me),
+                onChange: (s) => _change(context, ref, s, roles),
               ),
             ],
           ),
@@ -94,7 +87,7 @@ class VenueStaffScreen extends ConsumerWidget {
   }
 
   Future<void> _add(BuildContext context, WidgetRef ref, List<AppRole> roles) async {
-    final result = await showDialog<_NewStaff>(context: context, builder: (_) => _AddStaffDialog(roles: roles));
+    final result = await showAppDialog<_NewStaff>(context: context, builder: (_) => _AddStaffDialog(roles: roles));
     if (result == null || !context.mounted) return;
     final ok = await runAction(
       context,
@@ -148,7 +141,7 @@ class VenueStaffScreen extends ConsumerWidget {
       if (ok) ref.invalidate(venueStaffProvider(venueId));
       return;
     }
-    final role = await showDialog<String>(
+    final role = await showAppDialog<String>(
         context: context, builder: (_) => _RoleDialog(name: s.name, roles: roles, current: s.role));
     if (role == null || role == s.role || !context.mounted) return;
     final ok = await runAction(
@@ -157,6 +150,99 @@ class VenueStaffScreen extends ConsumerWidget {
       success: 'Role changed',
     );
     if (ok) ref.invalidate(venueStaffProvider(venueId));
+  }
+}
+
+/// The venue's staff as a table: who, their role, their email. A row they
+/// may change opens Change role / Remove; the owner's and their own don't.
+class _StaffTable extends StatelessWidget {
+  final List<VenueStaffMember> staff;
+  final String? me;
+  final bool Function(VenueStaffMember) canChange;
+  final ValueChanged<VenueStaffMember> onChange;
+
+  const _StaffTable({required this.staff, required this.me, required this.canChange, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    Widget roleChip(VenueStaffMember s) => s.role == VenueRole.owner
+        ? StatusChip(label: s.roleName, color: brand.accent, icon: Icons.workspace_premium_rounded)
+        : StatusChip(label: s.roleName, color: context.colors.tertiary);
+    return DataGrid<VenueStaffMember>(
+      rows: staff,
+      noun: 'staff',
+      // Only the rows they may change open; the rest just sit there.
+      onRowTap: (s) {
+        if (canChange(s)) onChange(s);
+      },
+      rowLabel: (s) => canChange(s) ? 'Change ${s.name}' : s.name,
+      columns: [
+        GridColumn(
+          key: 'person',
+          label: 'Person',
+          flex: 4,
+          sortBy: (s) => s.name.toLowerCase(),
+          cell: (context, s) {
+            final initials = s.name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).take(2).map((p) => p[0]).join();
+            final color = s.role == VenueRole.owner ? brand.accent : context.colors.primary;
+            return Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: color.withValues(alpha: 0.12),
+                  child: Text(initials.toUpperCase(), style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(s.userId == me ? '${s.name} (you)' : s.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                      if (!DataGrid.shows(context, 'email') && s.email != null)
+                        Text(s.email!,
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+                      if (!DataGrid.shows(context, 'role'))
+                        Padding(padding: const EdgeInsets.only(top: 4), child: roleChip(s)),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'role',
+          label: 'Role',
+          flex: 3,
+          showFrom: 520,
+          sortBy: (s) => '${s.role == VenueRole.owner ? 0 : 1}${s.roleName.toLowerCase()}',
+          cell: (context, s) => roleChip(s),
+        ),
+        GridColumn(
+          key: 'email',
+          label: 'Email',
+          flex: 4,
+          showFrom: 760,
+          sortBy: (s) => (s.email ?? '').toLowerCase(),
+          cell: (context, s) => Text(s.email ?? '—',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.email == null ? brand.muted : brand.body)),
+        ),
+        GridColumn(
+          key: 'manage',
+          label: '',
+          width: 48,
+          alignEnd: true,
+          cell: (context, s) => canChange(s)
+              ? Tooltip(message: 'Change role or remove', child: Icon(Icons.more_horiz_rounded, color: brand.muted))
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 }
 

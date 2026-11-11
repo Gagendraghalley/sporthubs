@@ -12,6 +12,7 @@ import '../utils/launch.dart';
 import '../utils/validators.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
 import '../widgets/loader.dart';
@@ -392,31 +393,123 @@ class MyVenuesScreen extends ConsumerWidget {
               )
             : RefreshIndicator(
                 onRefresh: () => ref.refresh(myVenuesProvider.future),
-                child: ListView.separated(
+                child: ListView(
                   padding: pagePadding(context, bottom: 96),
-                  itemCount: venues.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) {
-                    final v = venues[i];
-                    return VenueCard(
-                      venue: v.venue,
-                      onTap: () => context.push(
-                          venueHomeRoute(ref.read(enabledModulesProvider).valueOrNull ?? const [], v.venue)),
-                      trailing: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          VerificationChip(status: v.venue.verificationStatus),
-                          const SizedBox(height: 4),
-                          Text(v.roleName, style: TextStyle(color: context.brand.muted)),
-                        ],
-                      ),
-                    );
-                  },
+                  children: [_MyVenuesTable(venues: venues)],
                 ),
               ),
       ),
     );
   }
+}
+
+/// The venues they run, as a table: the venue, where, their role there, and
+/// whether SportsHub has verified it; a row opens the venue.
+class _MyVenuesTable extends ConsumerWidget {
+  final List<MyVenue> venues;
+
+  const _MyVenuesTable({required this.venues});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final brand = context.brand;
+    return DataGrid<MyVenue>(
+      rows: venues,
+      noun: 'venues',
+      rowLabel: (v) => 'Open ${v.venue.name}',
+      onRowTap: (v) => context.push(venueHomeRoute(ref.read(enabledModulesProvider).valueOrNull ?? const [], v.venue)),
+      columns: [
+        GridColumn(
+          key: 'venue',
+          label: 'Venue',
+          flex: 4,
+          sortBy: (v) => v.venue.name.toLowerCase(),
+          cell: (context, v) {
+            final tint = context.colors.tertiary;
+            final photo = v.venue.coverPhoto;
+            final icon = ColoredBox(color: tint.withValues(alpha: 0.12), child: Icon(Icons.storefront_rounded, color: tint, size: 22));
+            return Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: photo == null
+                        ? icon
+                        : Image.network(photo, fit: BoxFit.cover, errorBuilder: (_, __, ___) => icon),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(v.venue.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                      Text(
+                        [
+                          if (!DataGrid.shows(context, 'place')) v.venue.place,
+                          if (!DataGrid.shows(context, 'role')) 'You: ${v.roleName}',
+                        ].join(' · ').ifEmpty(v.venue.type),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: brand.muted, fontSize: 13),
+                      ),
+                      if (!DataGrid.shows(context, 'status'))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: VerificationChip(status: v.venue.verificationStatus),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'place',
+          label: 'Where',
+          flex: 3,
+          showFrom: 700,
+          sortBy: (v) => v.venue.place.toLowerCase(),
+          cell: (context, v) => Text(v.venue.place, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.body)),
+        ),
+        GridColumn(
+          key: 'role',
+          label: 'Your role',
+          flex: 2,
+          showFrom: 860,
+          sortBy: (v) => v.roleName.toLowerCase(),
+          cell: (context, v) => Text(v.roleName, style: TextStyle(color: brand.body, fontWeight: FontWeight.w600)),
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 136,
+          showFrom: 520,
+          sortBy: (v) => v.venue.verificationStatus,
+          cell: (context, v) => VerificationChip(status: v.venue.verificationStatus),
+        ),
+        GridColumn(
+          key: 'open',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, v) => Icon(Icons.chevron_right_rounded, color: brand.muted),
+        ),
+      ],
+    );
+  }
+}
+
+extension on String {
+  /// This, or [other] when it's empty.
+  String ifEmpty(String other) => isEmpty ? other : this;
 }
 
 /// Running one venue: its status, the module's pages for it (members,

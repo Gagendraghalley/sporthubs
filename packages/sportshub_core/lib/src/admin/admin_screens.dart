@@ -8,12 +8,14 @@ import '../module/app_module_row.dart';
 import '../module/module_providers.dart';
 import '../module/sportshub_module.dart';
 import '../router/core_routes.dart';
+import '../shell/platform_shell.dart' show ServiceIconTile;
 import '../theme/brand.dart';
 import '../utils/formatters.dart';
 import '../venues/venue.dart';
 import '../venues/venue_widgets.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/responsive.dart';
 import 'admin_repository.dart';
@@ -95,14 +97,7 @@ class AdminVenuesScreen extends ConsumerWidget {
               ? const EmptyState(icon: Icons.task_alt_rounded, title: 'All caught up', message: 'No venues are waiting.')
               : ListView(
                   padding: pagePadding(context),
-                  children: [
-                    ResponsiveGrid(
-                      minItemWidth: 420,
-                      maxColumns: 3,
-                      equalHeight: false,
-                      children: [for (final v in venues) _PendingVenueCard(venue: v)],
-                    ),
-                  ],
+                  children: [_PendingVenuesTable(venues: venues)],
                 ),
         ),
       ),
@@ -110,68 +105,212 @@ class AdminVenuesScreen extends ConsumerWidget {
   }
 }
 
-class _PendingVenueCard extends ConsumerWidget {
-  final Venue venue;
+/// Sends [venue] back (asking why) or verifies it (asking first); true when
+/// it was done.
+Future<bool> _reviewVenue(BuildContext context, WidgetRef ref, Venue venue, {required bool approve}) async {
+  String? note;
+  if (!approve) {
+    note = await askText(context, title: 'Why is it sent back?', hint: 'The owner sees this', required: true);
+    if (note == null) return false;
+  } else {
+    final sure =
+        await confirmAction(context, title: 'Verify ${venue.name}?', message: 'It goes live for everyone.', confirmLabel: 'Verify');
+    if (!sure) return false;
+  }
+  if (!context.mounted) return false;
+  final ok = await runAction(
+    context,
+    () => ref.read(adminRepositoryProvider).reviewVenue(venue.id, approve: approve, note: note),
+    success: approve ? '${venue.name} is live' : 'Sent back to the owner',
+  );
+  if (ok) ref.invalidate(pendingVenuesProvider);
+  return ok;
+}
 
-  const _PendingVenueCard({required this.venue});
+/// The venues waiting, as a table: the venue, where, its phone, when it was
+/// sent, and Send back / Verify. A row opens it in full (photos and all)
+/// to review.
+class _PendingVenuesTable extends ConsumerWidget {
+  final List<Venue> venues;
+
+  const _PendingVenuesTable({required this.venues});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (venue.photos.isNotEmpty) ...[VenuePhotoCarousel(photos: venue.photos), const SizedBox(height: 12)],
-          Row(
+    final brand = context.brand;
+    return DataGrid<Venue>(
+      rows: venues,
+      noun: 'venues',
+      rowLabel: (v) => 'Review ${v.name}',
+      onRowTap: (v) => showAppDialog<void>(context: context, builder: (_) => _ReviewVenueDialog(venue: v)),
+      columns: [
+        GridColumn(
+          key: 'venue',
+          label: 'Venue',
+          flex: 4,
+          sortBy: (v) => v.name.toLowerCase(),
+          cell: (context, v) => Row(
             children: [
-              Expanded(child: Text(venue.name, style: context.text.titleMedium)),
-              StatusChip(label: venue.type, color: context.colors.tertiary),
-            ],
-          ),
-          const SizedBox(height: 6),
-          InfoRow(icon: Icons.place_outlined, text: [venue.place, if (venue.address != null) venue.address!].join(' · ')),
-          if (venue.phone != null) InfoRow(icon: Icons.call_outlined, text: venue.phone!),
-          if (venue.description != null) InfoRow(icon: Icons.notes_rounded, text: venue.description!),
-          InfoRow(icon: Icons.schedule_rounded, text: 'Sent ${formatMoment(venue.createdAt)}'),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _review(context, ref, approve: false),
-                  child: const Text('Send back'),
-                ),
-              ),
+              _VenueThumb(venue: v),
               const SizedBox(width: 12),
               Expanded(
-                child: FilledButton(
-                  onPressed: () => _review(context, ref, approve: true),
-                  child: const Text('Verify'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(v.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                    Text(
+                      DataGrid.shows(context, 'place') ? _typeLabel(v.type) : '${_typeLabel(v.type)} · ${v.place}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: brand.muted, fontSize: 13),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ],
+        ),
+        GridColumn(
+          key: 'place',
+          label: 'Where',
+          flex: 3,
+          showFrom: 720,
+          sortBy: (v) => v.place.toLowerCase(),
+          cell: (context, v) => Text(v.place, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.body)),
+        ),
+        GridColumn(
+          key: 'phone',
+          label: 'Phone',
+          flex: 2,
+          showFrom: 1050,
+          cell: (context, v) => Text(v.phone ?? '—', style: TextStyle(color: v.phone == null ? brand.muted : brand.body)),
+        ),
+        GridColumn(
+          key: 'sent',
+          label: 'Sent',
+          flex: 2,
+          showFrom: 880,
+          sortBy: (v) => v.createdAt,
+          cell: (context, v) => Text(formatMoment(v.createdAt), style: TextStyle(color: brand.body)),
+        ),
+        GridColumn(
+          key: 'actions',
+          label: '',
+          width: 236,
+          showFrom: 640,
+          alignEnd: true,
+          cell: (context, v) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton(
+                onPressed: () => _reviewVenue(context, ref, v, approve: false),
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14)),
+                child: const Text('Send back'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => _reviewVenue(context, ref, v, approve: true),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14)),
+                child: const Text('Verify'),
+              ),
+            ],
+          ),
+        ),
+        GridColumn(
+          key: 'open',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, v) => Icon(Icons.chevron_right_rounded, color: brand.muted),
+        ),
+      ],
+    );
+  }
+}
+
+/// 'gym' -> 'Gym'.
+String _typeLabel(String type) => type.isEmpty ? type : type[0].toUpperCase() + type.substring(1).replaceAll('_', ' ');
+
+/// The venue's first photo, small; its icon without one.
+class _VenueThumb extends StatelessWidget {
+  final Venue venue;
+
+  const _VenueThumb({required this.venue});
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = context.colors.tertiary;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: venue.photos.isEmpty
+            ? ColoredBox(color: tint.withValues(alpha: 0.12), child: Icon(Icons.storefront_rounded, color: tint, size: 22))
+            : Image.network(
+                venue.photos.first,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    ColoredBox(color: tint.withValues(alpha: 0.12), child: Icon(Icons.storefront_rounded, color: tint, size: 22)),
+              ),
       ),
     );
   }
+}
 
-  Future<void> _review(BuildContext context, WidgetRef ref, {required bool approve}) async {
-    String? note;
-    if (!approve) {
-      note = await askText(context, title: 'Why is it sent back?', hint: 'The owner sees this', required: true);
-      if (note == null) return;
-    } else {
-      final sure = await confirmAction(context, title: 'Verify ${venue.name}?', message: 'It goes live for everyone.', confirmLabel: 'Verify');
-      if (!sure) return;
+/// One waiting venue in full, to review: its photos and details, and Send
+/// back or Verify.
+class _ReviewVenueDialog extends ConsumerWidget {
+  final Venue venue;
+
+  const _ReviewVenueDialog({required this.venue});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    Future<void> review(bool approve) async {
+      final done = await _reviewVenue(context, ref, venue, approve: approve);
+      if (done && context.mounted) Navigator.of(context).pop();
     }
-    if (!context.mounted) return;
-    final ok = await runAction(
-      context,
-      () => ref.read(adminRepositoryProvider).reviewVenue(venue.id, approve: approve, note: note),
-      success: approve ? '${venue.name} is live' : 'Sent back to the owner',
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Expanded(child: Text(venue.name)),
+          StatusChip(label: _typeLabel(venue.type), color: context.colors.tertiary),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (venue.photos.isNotEmpty) ...[VenuePhotoCarousel(photos: venue.photos), const SizedBox(height: 12)],
+              InfoRow(icon: Icons.place_outlined, text: [venue.place, if (venue.address != null) venue.address!].join(' · ')),
+              if (venue.phone != null) InfoRow(icon: Icons.call_outlined, text: venue.phone!),
+              if (venue.description != null) InfoRow(icon: Icons.notes_rounded, text: venue.description!),
+              InfoRow(icon: Icons.schedule_rounded, text: 'Sent ${formatMoment(venue.createdAt)}'),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+        OutlinedButton(onPressed: () => review(false), child: const Text('Send back')),
+        FilledButton(onPressed: () => review(true), child: const Text('Verify')),
+      ],
     );
-    if (ok) ref.invalidate(pendingVenuesProvider);
   }
 }
 
@@ -199,13 +338,7 @@ class AdminModulesScreen extends ConsumerWidget {
                   style: TextStyle(color: context.brand.muted),
                 ),
               ),
-              ResponsiveGrid(
-                minItemWidth: 340,
-                maxColumns: 3,
-                children: [
-                  for (final row in rows) _ModuleTile(row: row, module: registered[row.key]),
-                ],
-              ),
+              _ModulesTable(rows: rows, registered: registered),
             ],
           ),
         ),
@@ -214,17 +347,19 @@ class AdminModulesScreen extends ConsumerWidget {
   }
 }
 
-/// One module with its switch; tapping anywhere on the card flips it.
-/// [module] is null for a module this version of the app doesn't have.
-class _ModuleTile extends ConsumerWidget {
-  final AppModuleRow row;
-  final SportsHubModule? module;
+/// The modules as a table: the service, what it does, on or off, and its
+/// switch; tapping a row flips it too. A module this version of the app
+/// doesn't have says so.
+class _ModulesTable extends ConsumerWidget {
+  final List<AppModuleRow> rows;
+  final Map<String, SportsHubModule> registered;
 
-  const _ModuleTile({required this.row, required this.module});
+  const _ModulesTable({required this.rows, required this.registered});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Future<void> toggle(bool on) async {
+    final brand = context.brand;
+    Future<void> toggle(AppModuleRow row, bool on) async {
       final ok = await runAction(
         context,
         () => ref.read(adminRepositoryProvider).setModuleEnabled(row.key, on),
@@ -233,13 +368,73 @@ class _ModuleTile extends ConsumerWidget {
       if (ok) ref.invalidate(appModulesProvider);
     }
 
-    return MenuTile(
-      icon: module?.icon ?? Icons.extension_outlined,
-      iconColor: module?.color ?? context.brand.muted,
-      title: row.name,
-      subtitle: module?.description ?? 'Not in this version of the app',
-      trailing: Switch(value: row.isEnabled, onChanged: toggle),
-      onTap: () => toggle(!row.isEnabled),
+    String about(AppModuleRow row) => registered[row.key]?.description ?? 'Not in this version of the app';
+    return DataGrid<AppModuleRow>(
+      rows: rows,
+      noun: 'modules',
+      rowLabel: (r) => 'Turn ${r.name} ${r.isEnabled ? 'off' : 'on'}',
+      dimmed: (r) => !r.isEnabled,
+      onRowTap: (r) => toggle(r, !r.isEnabled),
+      columns: [
+        GridColumn(
+          key: 'module',
+          label: 'Service',
+          flex: 3,
+          sortBy: (r) => r.name.toLowerCase(),
+          cell: (context, r) {
+            final module = registered[r.key];
+            final color = module?.color ?? brand.muted;
+            return Row(
+              children: [
+                ServiceIconTile(icon: module?.icon ?? Icons.extension_outlined, color: color, size: 38),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(r.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                      if (!DataGrid.shows(context, 'about'))
+                        Text(about(r),
+                            maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'about',
+          label: 'What it does',
+          flex: 5,
+          showFrom: 720,
+          cell: (context, r) => Text(about(r),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: registered[r.key] == null ? brand.muted : brand.body, height: 1.35)),
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 104,
+          showFrom: 520,
+          sortBy: (r) => r.isEnabled ? 0 : 1,
+          cell: (context, r) => r.isEnabled
+              ? StatusChip(label: 'On', color: brand.success)
+              : StatusChip(label: 'Off', color: brand.muted),
+        ),
+        GridColumn(
+          key: 'switch',
+          label: '',
+          width: 72,
+          alignEnd: true,
+          cell: (context, r) => Switch(value: r.isEnabled, onChanged: (on) => toggle(r, on)),
+        ),
+      ],
     );
   }
 }

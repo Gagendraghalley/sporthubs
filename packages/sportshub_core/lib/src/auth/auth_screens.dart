@@ -188,11 +188,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline_rounded),
-                    suffixIcon: IconButton(
-                      tooltip: _hide ? 'Show password' : 'Hide password',
-                      icon: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                      onPressed: () => setState(() => _hide = !_hide),
-                    ),
+                    suffixIcon: PasswordEye(hidden: _hide, onPressed: () => setState(() => _hide = !_hide)),
                   ),
                   validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
                 ),
@@ -558,11 +554,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                     labelText: 'New password',
                     helperText: 'At least 8 characters',
                     prefixIcon: const Icon(Icons.lock_outline_rounded),
-                    suffixIcon: IconButton(
-                      tooltip: _hide ? 'Show password' : 'Hide password',
-                      icon: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                      onPressed: () => setState(() => _hide = !_hide),
-                    ),
+                    suffixIcon: PasswordEye(hidden: _hide, onPressed: () => setState(() => _hide = !_hide)),
                   ),
                   validator: Validators.password,
                 ),

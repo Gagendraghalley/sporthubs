@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/feedback.dart';
+import '../widgets/motion.dart';
 import 'app_notification.dart';
 import 'notification_repository.dart';
 
@@ -90,20 +93,52 @@ class _NotificationTile extends ConsumerWidget {
 }
 
 /// The bell in app bars, with the number unread.
-class NotificationBell extends ConsumerWidget {
+/// The bell at the top right, with how many are unread. When a new one
+/// comes in, the bell rings once (a short swing) and the count pops: you
+/// notice it, and it's still after that.
+class NotificationBell extends ConsumerStatefulWidget {
   const NotificationBell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationBell> createState() => _NotificationBellState();
+}
+
+class _NotificationBellState extends ConsumerState<NotificationBell> with SingleTickerProviderStateMixin {
+  late final AnimationController _ring = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+
+  @override
+  void dispose() {
+    _ring.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final unread = ref.watch(unreadCountProvider);
+    ref.listen<int>(unreadCountProvider, (before, now) {
+      if (now > (before ?? 0) && !reduceMotion(context)) _ring.forward(from: 0);
+    });
     return IconButton(
       tooltip: unread == 0 ? 'Notifications' : 'Notifications, $unread unread',
       onPressed: () => context.push(CoreRoutes.notifications),
       icon: Badge(
         isLabelVisible: unread > 0,
         backgroundColor: context.colors.secondary,
-        label: Text(unread > 9 ? '9+' : '$unread'),
-        child: const Icon(Icons.notifications_none_rounded),
+        label: AnimatedSwitcher(
+          duration: Motion.of(context, Motion.press),
+          transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+          child: Text(unread > 9 ? '9+' : '$unread', key: ValueKey(unread)),
+        ),
+        child: AnimatedBuilder(
+          animation: _ring,
+          // A swing that dies away: three beats, smaller each time.
+          builder: (context, child) {
+            final t = _ring.value;
+            final angle = t == 0 || t == 1 ? 0.0 : 0.32 * (1 - t) * math.sin(t * 6 * math.pi);
+            return Transform.rotate(angle: angle, alignment: Alignment.topCenter, child: child);
+          },
+          child: const Icon(Icons.notifications_none_rounded),
+        ),
       ),
     );
   }

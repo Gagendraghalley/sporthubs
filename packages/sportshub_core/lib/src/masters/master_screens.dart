@@ -8,8 +8,10 @@ import '../access/permission_gate.dart';
 import '../theme/brand.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/searchable_dropdown.dart';
 import 'location.dart';
 import 'master_repository.dart';
 
@@ -87,15 +89,18 @@ class _AdminMastersScreenState extends ConsumerState<AdminMastersScreen> {
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-                              child: FormHint(
-                                items.length >= masterListLimit
-                                    ? 'Showing the first $masterListLimit. Search, or choose a '
-                                        '${_level == LocationLevel.village ? 'gewog' : 'dzongkhag'}, to see the rest.'
-                                    : '${items.length} ${items.length == 1 ? _level.label.toLowerCase() : _level.plural.toLowerCase()}',
-                              ),
-                            ),
+                            // The table's foot counts them; here, only when
+                            // there are more than came back.
+                            if (items.length >= masterListLimit)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                                child: FormHint(
+                                  'Showing the first $masterListLimit. Search, or choose a '
+                                  '${_level == LocationLevel.village ? 'gewog' : 'dzongkhag'}, to see the rest.',
+                                ),
+                              )
+                            else
+                              const SizedBox(height: 8),
                             _MasterTable(level: _level, items: items, onTap: _edit),
                           ],
                         ),
@@ -207,7 +212,7 @@ class _AdminMastersScreenState extends ConsumerState<AdminMastersScreen> {
   }
 
   Future<void> _edit(LocationItem? item) async {
-    final saved = await showDialog<bool>(
+    final saved = await showAppDialog<bool>(
       context: context,
       builder: (_) => LocationEditDialog(
         level: item?.level ?? _level,
@@ -225,8 +230,9 @@ class _AdminMastersScreenState extends ConsumerState<AdminMastersScreen> {
   }
 }
 
-/// The rows as a table on a wide screen (name, where it is, code, whether
-/// it's in use); as a list on a phone. Tap a row to change it.
+/// The rows as a table: name, where it is (its gewog and dzongkhag), its
+/// code, whether it's in use; 25 to a page. Tap a row to change it. On a
+/// phone the name's cell carries where it is and its code.
 class _MasterTable extends StatelessWidget {
   final LocationLevel level;
   final List<LocationItem> items;
@@ -236,104 +242,132 @@ class _MasterTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        if (c.maxWidth < 700) {
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                for (final (i, item) in items.indexed) ...[
-                  if (i > 0) const Divider(height: 1),
-                  _LocationTile(item: item, onTap: () => onTap(item)),
-                ],
-              ],
-            ),
-          );
-        }
-        final muted = context.brand.muted;
-        final columns = <(String, int, Widget Function(LocationItem))>[
-          ('Name', 4, (i) => Text(i.name, style: TextStyle(fontWeight: FontWeight.w600, color: i.isActive ? null : muted))),
-          if (level == LocationLevel.gewog) ...[
-            ('Kind', 2, (i) => Text(GewogKind.label(i.kind ?? GewogKind.gewog))),
-            ('Dzongkhag', 3, (i) => Text(i.parentName ?? '—')),
-          ],
-          if (level == LocationLevel.village) ...[
-            ('Gewog or thromde', 3, (i) => Text(i.parentName ?? '—')),
-            ('Dzongkhag', 3, (i) => Text(i.grandparentName ?? '—')),
-            ('Code', 2, (i) => Text(i.code ?? '—', style: TextStyle(color: muted, fontFeatures: const [FontFeature.tabularFigures()]))),
-          ],
-          ('Status', 2, (i) => Align(
-                alignment: Alignment.centerLeft,
-                child: i.isActive
-                    ? StatusChip(label: 'In use', color: context.brand.success)
-                    : StatusChip(label: 'Off', color: muted),
-              )),
-        ];
-        Widget row(List<Widget> cells, {Widget? trailing}) => Row(
-              children: [
-                for (final (i, col) in columns.indexed) Expanded(flex: col.$2, child: cells[i]),
-                SizedBox(width: 40, child: trailing),
-              ],
-            );
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              Container(
-                color: context.colors.primary.withValues(alpha: 0.05),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                child: row([
-                  for (final col in columns)
-                    Text(col.$1, style: context.text.labelMedium?.copyWith(color: muted, fontWeight: FontWeight.w700)),
-                ]),
-              ),
-              for (final item in items) ...[
-                const Divider(height: 1),
-                InkWell(
-                  onTap: () => onTap(item),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: row(
-                      [for (final col in columns) col.$3(item)],
-                      trailing: Icon(Icons.edit_outlined, size: 18, color: muted),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+    final brand = context.brand;
+    Widget plain(String? text, {bool code = false}) => Text(
+          text ?? '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: text == null || code ? brand.muted : brand.body,
+            fontFeatures: code ? const [FontFeature.tabularFigures()] : null,
           ),
         );
-      },
+    final village = level == LocationLevel.village;
+    final gewog = level == LocationLevel.gewog;
+    return DataGrid<LocationItem>(
+      // A new level is a new table: its own order and first page.
+      key: ValueKey(level),
+      rows: items,
+      noun: level.plural.toLowerCase(),
+      pageSizes: const [25, 50, 100],
+      rowLabel: (i) => 'Change ${i.name}',
+      dimmed: (i) => !i.isActive,
+      onRowTap: onTap,
+      columns: [
+        GridColumn(
+          key: 'name',
+          label: 'Name',
+          flex: 4,
+          sortBy: (i) => i.name.toLowerCase(),
+          cell: (context, i) => _NameCell(item: i),
+        ),
+        if (gewog) ...[
+          GridColumn(
+            key: 'kind',
+            label: 'Kind',
+            flex: 2,
+            showFrom: 700,
+            sortBy: (i) => i.kind ?? GewogKind.gewog,
+            cell: (context, i) => plain(GewogKind.label(i.kind ?? GewogKind.gewog)),
+          ),
+          GridColumn(
+            key: 'place',
+            label: 'Dzongkhag',
+            flex: 3,
+            showFrom: 700,
+            sortBy: (i) => (i.parentName ?? '').toLowerCase(),
+            cell: (context, i) => plain(i.parentName),
+          ),
+        ],
+        if (village) ...[
+          GridColumn(
+            key: 'place',
+            label: 'Gewog or thromde',
+            flex: 3,
+            showFrom: 700,
+            sortBy: (i) => (i.parentName ?? '').toLowerCase(),
+            cell: (context, i) => plain(i.parentName),
+          ),
+          GridColumn(
+            key: 'dzongkhag',
+            label: 'Dzongkhag',
+            flex: 3,
+            showFrom: 860,
+            sortBy: (i) => (i.grandparentName ?? '').toLowerCase(),
+            cell: (context, i) => plain(i.grandparentName),
+          ),
+          GridColumn(
+            key: 'code',
+            label: 'Code',
+            flex: 2,
+            showFrom: 700,
+            sortBy: (i) => i.code ?? '',
+            cell: (context, i) => plain(i.code, code: true),
+          ),
+        ],
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 108,
+          showFrom: 480,
+          sortBy: (i) => i.isActive ? 0 : 1,
+          cell: (context, i) => i.isActive
+              ? StatusChip(label: 'In use', color: brand.success)
+              : StatusChip(label: 'Off', color: brand.muted),
+        ),
+        GridColumn(
+          key: 'edit',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, i) => Icon(Icons.edit_outlined, size: 18, color: brand.muted),
+        ),
+      ],
     );
   }
 }
 
-class _LocationTile extends StatelessWidget {
+/// The name; with the other columns away (a phone), where it is, its code,
+/// and 'Off'.
+class _NameCell extends StatelessWidget {
   final LocationItem item;
-  final VoidCallback onTap;
 
-  const _LocationTile({required this.item, required this.onTap});
+  const _NameCell({required this.item});
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brand;
     final details = [
-      if (item.kind == GewogKind.thromde) 'Thromde',
-      if (item.place != null) item.place!,
-      if (item.code != null) item.code!,
+      if (!DataGrid.shows(context, 'kind') && item.kind == GewogKind.thromde) 'Thromde',
+      if (!DataGrid.shows(context, 'place') && item.place != null) item.place!,
+      if (!DataGrid.shows(context, 'code') && item.code != null) item.code!,
     ];
-    return ListTile(
-      onTap: onTap,
-      title: Text(item.name, style: TextStyle(color: item.isActive ? null : context.brand.muted)),
-      subtitle: details.isEmpty ? null : Text(details.join(' · ')),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!item.isActive) StatusChip(label: 'Off', color: context.brand.muted),
-          const SizedBox(width: 4),
-          const Icon(Icons.edit_outlined, size: 20),
-        ],
-      ),
+    final off = !item.isActive && !DataGrid.shows(context, 'status');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(item.name,
+            maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, color: brand.ink)),
+        if (details.isNotEmpty)
+          Text(details.join(' · '),
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+        if (off)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: StatusChip(label: 'Off', color: brand.muted),
+          ),
+      ],
     );
   }
 }
@@ -362,16 +396,13 @@ class _ParentFilter extends ConsumerWidget {
                 )))
                 .valueOrNull ??
             const <LocationItem>[];
-    return DropdownButtonFormField<int?>(
-      initialValue: items.any((i) => i.id == value) ? value : null,
-      isExpanded: true,
-      menuMaxHeight: 420,
+    return SearchableDropdown<int?>(
+      value: items.any((i) => i.id == value) ? value : null,
       decoration: InputDecoration(labelText: level == LocationLevel.gewog ? 'Gewog' : 'Dzongkhag'),
-      hint: Text(needsDzongkhag ? 'Choose a dzongkhag to choose a gewog' : 'All'),
-      items: [
-        const DropdownMenuItem<int?>(value: null, child: Text('All')),
-        for (final i in items)
-          DropdownMenuItem<int?>(value: i.id, child: Text(i.name, overflow: TextOverflow.ellipsis)),
+      hint: needsDzongkhag ? 'Choose a dzongkhag to choose a gewog' : 'All',
+      options: [
+        const DropdownOption<int?>(null, 'All'),
+        for (final i in items) DropdownOption<int?>(i.id, i.name),
       ],
       onChanged: needsDzongkhag ? null : onChanged,
     );
@@ -544,17 +575,11 @@ class _ParentPicker extends ConsumerWidget {
                 )))
                 .valueOrNull ??
             const <LocationItem>[];
-    return DropdownButtonFormField<int>(
-      initialValue: items.any((i) => i.id == value) ? value : null,
-      isExpanded: true,
-      menuMaxHeight: 420,
+    return SearchableDropdown<int>(
+      value: items.any((i) => i.id == value) ? value : null,
       decoration: InputDecoration(labelText: '${level == LocationLevel.gewog ? 'Gewog or thromde' : 'Dzongkhag'} *'),
-      hint: waiting ? const Text('Choose the dzongkhag first') : null,
-      items: [
-        for (final i in items)
-          DropdownMenuItem(
-              value: i.id, child: Text(i.isActive ? i.name : '${i.name} (off)', overflow: TextOverflow.ellipsis)),
-      ],
+      hint: waiting ? 'Choose the dzongkhag first' : null,
+      options: [for (final i in items) DropdownOption(i.id, i.isActive ? i.name : '${i.name} (off)')],
       onChanged: waiting ? null : onChanged,
       validator: (id) =>
           id == null ? (level == LocationLevel.gewog ? 'Choose the gewog' : 'Choose the dzongkhag') : null,

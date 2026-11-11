@@ -13,9 +13,11 @@ import '../venues/venue.dart';
 import '../venues/venue_repository.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
 import '../widgets/responsive.dart';
+import '../widgets/searchable_dropdown.dart';
 
 import 'access.dart';
 import 'access_repository.dart';
@@ -72,7 +74,10 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       permission: PlatformPermission.users,
       builder: (context, access) {
         final users = ref.watch(managedUsersProvider(_search));
-        final roleNames = {for (final r in ref.watch(rolesProvider).valueOrNull ?? const <AppRole>[]) r.id: r.name};
+        final roles = ref.watch(rolesProvider).valueOrNull ?? const <AppRole>[];
+        final roleNames = {for (final r in roles) r.id: r.name};
+        // A venue role is kept by its key ('staff'); shown by its name.
+        final venueRoleNames = {for (final r in roles) if (r.scope == 'venue') r.key: r.name};
         return AppPage(
           title: 'Users',
           floatingActionButton: FloatingActionButton.extended(
@@ -132,17 +137,13 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                          child: FormHint(all.length >= 200
-                              ? 'The 200 newest accounts${_search.isEmpty ? '' : ' that match'}. Search to find others.'
-                              : '${shown.length} ${shown.length == 1 ? 'account' : 'accounts'}'),
-                        ),
-                        ResponsiveGrid(
-                          minItemWidth: 380,
-                          maxColumns: 3,
-                          children: [for (final u in shown) _UserTile(user: u, roleNames: roleNames)],
-                        ),
+                        if (all.length >= 200)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                            child: FormHint(
+                                'The 200 newest accounts${_search.isEmpty ? '' : ' that match'}. Search to find others.'),
+                          ),
+                        _UsersTable(users: shown, roleNames: roleNames, venueRoleNames: venueRoleNames),
                       ],
                     );
                   },
@@ -156,54 +157,228 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   }
 
   Future<void> _create(PlatformAccess access) async {
-    final made = await showDialog<CreatedUser>(context: context, builder: (_) => NewUserDialog(access: access));
+    final made = await showAppDialog<CreatedUser>(context: context, builder: (_) => NewUserDialog(access: access));
     if (made == null || !mounted) return;
     ref.invalidate(managedUsersProvider);
     context.push(CoreRoutes.adminUserFor(made.userId));
   }
 }
 
-class _UserTile extends StatelessWidget {
-  final ManagedUser user;
+/// Every account as a table: who, phone, member code, the team's roles,
+/// their venues, on or off, and when they joined; tap a row to open it.
+/// On a narrow window the extra columns step aside and the person's cell
+/// carries their roles.
+class _UsersTable extends StatelessWidget {
+  final List<ManagedUser> users;
   final Map<String, String> roleNames;
+  final Map<String, String> venueRoleNames;
 
-  const _UserTile({required this.user, required this.roleNames});
+  const _UsersTable({required this.users, required this.roleNames, required this.venueRoleNames});
+
+  List<String> _roles(ManagedUser u) => [
+        for (final id in u.platformRoleIds)
+          if (roleNames[id] != null) roleNames[id]!,
+      ];
 
   @override
   Widget build(BuildContext context) {
-    final roles = [
-      for (final id in user.platformRoleIds)
-        if (roleNames[id] != null) roleNames[id]!,
-      if (user.venueRoles.isNotEmpty) '${user.venueRoles.length} ${user.venueRoles.length == 1 ? 'venue' : 'venues'}',
+    String lower(String? s) => (s ?? '').toLowerCase();
+    return DataGrid<ManagedUser>(
+      rows: users,
+      noun: 'accounts',
+      rowLabel: (u) => 'Open ${u.displayName}',
+      onRowTap: (u) => context.push(CoreRoutes.adminUserFor(u.id)),
+      columns: [
+        GridColumn(
+          key: 'user',
+          label: 'User',
+          flex: 5,
+          sortBy: (u) => lower(u.displayName),
+          cell: (context, u) => _UserCell(user: u, roles: _roles(u)),
+        ),
+        GridColumn(
+          key: 'phone',
+          label: 'Phone',
+          flex: 3,
+          showFrom: 1150,
+          sortBy: (u) => u.phone ?? '',
+          cell: (context, u) => _Plain(u.phone),
+        ),
+        GridColumn(
+          key: 'code',
+          label: 'Member code',
+          flex: 3,
+          showFrom: 1000,
+          sortBy: (u) => u.memberCode,
+          cell: (context, u) => _Plain(u.memberCode, spaced: true),
+        ),
+        GridColumn(
+          key: 'roles',
+          label: 'Roles',
+          flex: 4,
+          showFrom: 640,
+          // Super admins first, then the team, then everyone else.
+          sortBy: (u) => '${u.isSuperAdmin ? 0 : (u.platformRoleIds.isEmpty ? 2 : 1)}${lower(_roles(u).join())}',
+          cell: (context, u) => _RolesCell(user: u, roles: _roles(u)),
+        ),
+        GridColumn(
+          key: 'venues',
+          label: 'Venues',
+          flex: 4,
+          showFrom: 860,
+          sortBy: (u) => u.venueRoles.length,
+          cell: (context, u) => _VenuesCell(user: u, venueRoleNames: venueRoleNames),
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 112,
+          showFrom: 480,
+          sortBy: (u) => u.isActive ? 0 : 1,
+          cell: (context, u) => u.isActive
+              ? StatusChip(label: 'Active', color: context.brand.success)
+              : StatusChip(label: 'Off', color: context.brand.danger),
+        ),
+        GridColumn(
+          key: 'joined',
+          label: 'Joined',
+          flex: 2,
+          showFrom: 1250,
+          sortBy: (u) => u.createdAt ?? DateTime(0),
+          cell: (context, u) => _Plain(u.createdAt == null ? null : formatDate(u.createdAt!.toLocal())),
+        ),
+        GridColumn(
+          key: 'open',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, u) => Icon(Icons.chevron_right_rounded, color: context.brand.muted),
+        ),
+      ],
+    );
+  }
+}
+
+/// Their initials, name and email; with the Roles column away (a narrow
+/// window), their roles too, and with Status away (a phone), 'Off' when
+/// they're turned off.
+class _UserCell extends StatelessWidget {
+  final ManagedUser user;
+  final List<String> roles;
+
+  const _UserCell({required this.user, required this.roles});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    final carryRoles = !DataGrid.shows(context, 'roles');
+    final carryOff = !user.isActive && !DataGrid.shows(context, 'status');
+    final badges = [
+      if (carryRoles && user.isSuperAdmin) StatusChip(label: 'Super admin', color: context.colors.tertiary),
+      if (carryOff) StatusChip(label: 'Off', color: brand.danger),
     ];
-    return SectionCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      onTap: () => context.push(CoreRoutes.adminUserFor(user.id)),
-      child: Row(
-        children: [
-          _Initials(name: user.displayName, dim: !user.isActive),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.displayName,
-                    style: const TextStyle(fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
-                if (user.email != null)
-                  Text(user.email!, style: TextStyle(color: context.brand.muted), overflow: TextOverflow.ellipsis),
-                if (roles.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(roles.join(' · '), style: context.text.bodySmall, overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-            ),
+    return Row(
+      children: [
+        _Initials(name: user.displayName, dim: !user.isActive),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(user.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+              if (user.email != null)
+                Text(user.email!,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13.5)),
+              if (carryRoles && !user.isSuperAdmin && roles.isNotEmpty)
+                Text(roles.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall),
+              if (badges.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(spacing: 6, runSpacing: 4, children: badges),
+                ),
+            ],
           ),
-          const SizedBox(width: 8),
-          if (user.isSuperAdmin) StatusChip(label: 'Super admin', color: context.colors.tertiary),
-          if (!user.isActive) StatusChip(label: 'Off', color: context.brand.danger),
-          const Icon(Icons.chevron_right_rounded),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Super admin, and the team's roles, as chips; 'Member' with none.
+class _RolesCell extends StatelessWidget {
+  final ManagedUser user;
+  final List<String> roles;
+
+  const _RolesCell({required this.user, required this.roles});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!user.isSuperAdmin && roles.isEmpty) return _Plain('Member', quiet: true);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (user.isSuperAdmin) StatusChip(label: 'Super admin', color: context.colors.tertiary),
+        for (final r in roles) StatusChip(label: r, color: context.colors.primary),
+      ],
+    );
+  }
+}
+
+/// The first venue they work at and their role there; how many more.
+class _VenuesCell extends StatelessWidget {
+  final ManagedUser user;
+  final Map<String, String> venueRoleNames;
+
+  const _VenuesCell({required this.user, required this.venueRoleNames});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    if (user.venueRoles.isEmpty) return const _Plain(null);
+    final first = user.venueRoles.first;
+    final more = user.venueRoles.length - 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(first.venueName,
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, color: brand.ink)),
+        Text(
+          [venueRoleNames[first.role] ?? first.role, if (more > 0) '+$more more'].join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: brand.muted, fontSize: 13),
+        ),
+      ],
+    );
+  }
+}
+
+/// A cell's text, or a dash with nothing to say.
+class _Plain extends StatelessWidget {
+  final String? text;
+  final bool spaced;
+  final bool quiet;
+
+  const _Plain(this.text, {this.spaced = false, this.quiet = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    final empty = text == null || text!.trim().isEmpty;
+    return Text(
+      empty ? '—' : text!,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: empty || quiet ? brand.muted : brand.body,
+        letterSpacing: spaced && !empty ? 1 : null,
+        fontWeight: spaced && !empty ? FontWeight.w600 : null,
       ),
     );
   }
@@ -529,7 +704,7 @@ class _VenueRolesSection extends ConsumerWidget {
   }
 
   Future<void> _give(BuildContext context, WidgetRef ref, UserVenueRole? current) async {
-    final result = await showDialog<({String venueId, String role})>(
+    final result = await showAppDialog<({String venueId, String role})>(
       context: context,
       builder: (_) => _VenueRoleDialog(current: current, exclude: {for (final v in user.venueRoles) v.venueId}),
     );
@@ -595,16 +770,10 @@ class _VenueRoleDialogState extends ConsumerState<_VenueRoleDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (widget.current == null) ...[
-                DropdownButtonFormField<String>(
-                  initialValue: _venueId,
-                  isExpanded: true,
-                  menuMaxHeight: 420,
+                SearchableDropdown<String>(
+                  value: _venueId,
                   decoration: const InputDecoration(labelText: 'Venue *'),
-                  items: [
-                    for (final v in choosable)
-                      DropdownMenuItem(
-                          value: v.id, child: Text('${v.name} · ${v.place}', overflow: TextOverflow.ellipsis)),
-                  ],
+                  options: [for (final v in choosable) DropdownOption(v.id, '${v.name} · ${v.place}')],
                   onChanged: (id) => setState(() => _venueId = id),
                   validator: (id) => id == null ? 'Choose the venue' : null,
                 ),
@@ -642,29 +811,10 @@ class VenueRoleField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: roles.any((r) => r.key == value) ? value : null,
-      isExpanded: true,
-      itemHeight: null,
+    return SearchableDropdown<String>(
+      value: roles.any((r) => r.key == value) ? value : null,
       decoration: const InputDecoration(labelText: 'Role *'),
-      selectedItemBuilder: (_) => [for (final r in roles) Text(r.name)],
-      items: [
-        for (final r in roles)
-          DropdownMenuItem(
-            value: r.key,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(r.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  if (r.description != null) Text(r.description!, style: context.text.bodySmall, maxLines: 2),
-                ],
-              ),
-            ),
-          ),
-      ],
+      options: [for (final r in roles) DropdownOption(r.key, r.name, detail: r.description)],
       onChanged: onChanged,
       validator: (r) => r == null ? 'Choose the role' : null,
     );

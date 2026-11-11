@@ -83,7 +83,7 @@ void main() {
     expect(find.text('Choose the dzongkhag first'), findsOneWidget);
 
     Future<void> choose(String label, String option) async {
-      await tester.tap(find.widgetWithText(DropdownButtonFormField<int>, label));
+      await tester.tap(find.widgetWithText(SearchableDropdown<int>, label));
       await tester.pumpAndSettle();
       await tester.tap(find.text(option).last);
       await tester.pumpAndSettle();
@@ -100,5 +100,45 @@ void main() {
     await choose('Gewog or thromde *', 'Thim Throm');
     await choose('Village *', 'Changangkha');
     expect(value.isComplete, isTrue);
+  });
+
+  testWidgets('every dropdown can be searched: type to narrow, Enter takes the first', (tester) async {
+    String? chosen;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: StatefulBuilder(
+          builder: (context, setState) => SearchableDropdown<String>(
+            value: chosen,
+            decoration: const InputDecoration(labelText: 'Dzongkhag'),
+            options: [for (final d in dzongkhags) DropdownOption(d, d)],
+            onChanged: (v) => setState(() => chosen = v),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Dzongkhag'));
+    await tester.pumpAndSettle();
+    final menu = find.byKey(SearchableDropdown.menuKey);
+    Finder inMenu(String text) => find.descendant(of: menu, matching: find.text(text));
+    expect(inMenu('Bumthang'), findsOneWidget);
+
+    // Names starting with it first, then those with a word starting with it.
+    await tester.enterText(find.descendant(of: menu, matching: find.byType(TextField)), 'tr');
+    await tester.pumpAndSettle();
+    expect(inMenu('Bumthang'), findsNothing);
+    expect(inMenu('Trashigang'), findsOneWidget);
+    expect(inMenu('Trongsa'), findsOneWidget);
+
+    await tester.enterText(find.descendant(of: menu, matching: find.byType(TextField)), 'zzz');
+    await tester.pumpAndSettle();
+    expect(find.text('No matches for “zzz”'), findsOneWidget);
+
+    await tester.enterText(find.descendant(of: menu, matching: find.byType(TextField)), 'phodrang');
+    await tester.pumpAndSettle();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(menu, findsNothing);
+    expect(chosen, 'Wangdue Phodrang');
+    expect(find.text('Wangdue Phodrang'), findsOneWidget);
   });
 }

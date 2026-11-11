@@ -281,38 +281,56 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (rows.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Center(
-                            child: Text(
-                              _search.isEmpty ? 'Nobody here.' : 'Nobody matches "$_search".',
-                              style: TextStyle(color: context.brand.muted),
-                            ),
+                      // A new filter or view cross-fades in; typing in the
+                      // search just narrows the list, without a flicker.
+                      AnimatedSwitcher(
+                        duration: Motion.of(context, Motion.dropdown),
+                        switchInCurve: Motion.ease,
+                        switchOutCurve: Motion.easeIn,
+                        layoutBuilder: (current, previous) =>
+                            Stack(alignment: Alignment.topCenter, children: [...previous, if (current != null) current]),
+                        transitionBuilder: (child, a) => FadeTransition(
+                          opacity: a,
+                          child: SlideTransition(
+                            position: Tween(begin: const Offset(0, 0.01), end: Offset.zero).animate(a),
+                            child: child,
                           ),
-                        )
-                      else
-                        LayoutBuilder(
-                          builder: (context, c) => c.maxWidth >= 1000 && !_cards
-                              ? _MembersTable(
-                                  rows: rows,
-                                  today: today,
-                                  onOpen: (m) => context.go(GymRoutes.memberFor(id, m.id)),
-                                )
-                              : ResponsiveGrid(
-                                  minItemWidth: 360,
-                                  maxColumns: 3,
-                                  children: staggered([
-                                    for (final r in rows)
-                                      _MemberTile(
-                                        member: r.member,
-                                        subs: r.subs,
-                                        today: today,
-                                        onTap: () => context.go(GymRoutes.memberFor(id, r.member.id)),
-                                      ),
-                                  ], step: const Duration(milliseconds: 30)),
-                                ),
                         ),
+                        child: KeyedSubtree(
+                          key: ValueKey('$_filter-$_cards-${rows.isEmpty}'),
+                          child: rows.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: Center(
+                                    child: Text(
+                                      _search.isEmpty ? 'Nobody here.' : 'Nobody matches "$_search".',
+                                      style: TextStyle(color: context.brand.muted),
+                                    ),
+                                  ),
+                                )
+                              // A table at every width (its columns step
+                              // aside on a phone); cards when they ask.
+                              : !_cards
+                                  ? _MembersTable(
+                                      rows: rows,
+                                      today: today,
+                                      onOpen: (m) => context.go(GymRoutes.memberFor(id, m.id)),
+                                    )
+                                  : ResponsiveGrid(
+                                      minItemWidth: 360,
+                                      maxColumns: 3,
+                                      children: staggered([
+                                        for (final r in rows)
+                                          _MemberTile(
+                                            member: r.member,
+                                            subs: r.subs,
+                                            today: today,
+                                            onTap: () => context.go(GymRoutes.memberFor(id, r.member.id)),
+                                          ),
+                                      ], step: const Duration(milliseconds: 30)),
+                                    ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -345,7 +363,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
         decoration: BoxDecoration(
           color: context.brand.card,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: context.brand.glassBorder),
+          border: Border.all(color: context.brand.fieldBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -385,92 +403,130 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
   }
 }
 
+typedef _MemberRow = ({GymMember member, List<GymSubscription> subs});
+
 /// The register as a table: who (photo, name, code), phone, package, expiry
-/// date, standing, and WhatsApp; a row opens the member.
+/// date and standing, 25 to a page; a row opens the member. The headers sort
+/// it too (the toolbar's order otherwise). On a phone the member's cell
+/// carries their package and standing.
 class _MembersTable extends StatelessWidget {
-  final List<({GymMember member, List<GymSubscription> subs})> rows;
+  final List<_MemberRow> rows;
   final DateTime today;
   final ValueChanged<GymMember> onOpen;
 
   const _MembersTable({required this.rows, required this.today, required this.onOpen});
 
+  String _package(_MemberRow r) =>
+      r.subs.firstWhere((s) => s.isCurrentOn(today), orElse: () => r.subs.isEmpty ? _none : r.subs.first).planName;
+
+  /// Paid until, or when the last one ended; null with none.
+  DateTime? _expiry(_MemberRow r) {
+    final until = paidUntil(r.subs, today);
+    if (until != null) return until;
+    return r.subs.where((s) => s.endDate != null).map((s) => s.endDate!).fold<DateTime?>(
+        null, (a, b) => a == null || b.isAfter(a) ? b : a);
+  }
+
+  Widget _standing(_MemberRow r) {
+    final until = paidUntil(r.subs, today);
+    return StandingChip(
+      standing: standingOf(r.subs, today),
+      daysLeft: until == null ? null : BhutanTime.daysBetween(today, until) + 1,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final muted = context.brand.muted;
-    TextStyle head = TextStyle(color: muted, fontWeight: FontWeight.w700, fontSize: 12.5, letterSpacing: 0.3);
-    Widget row(List<Widget> cells, {bool header = false}) => Row(
-          children: [
-            Expanded(flex: 4, child: cells[0]),
-            Expanded(flex: 2, child: cells[1]),
-            Expanded(flex: 3, child: cells[2]),
-            Expanded(flex: 2, child: cells[3]),
-            Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: cells[4])),
-            SizedBox(width: 96, child: Align(alignment: Alignment.centerRight, child: cells[5])),
-          ],
-        );
-    return SectionCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
-            child: row([
-              Text('MEMBER', style: head),
-              Text('PHONE', style: head),
-              Text('PACKAGE', style: head),
-              Text('EXPIRY DATE', style: head),
-              Text('STATUS', style: head),
-              const SizedBox(),
-            ]),
-          ),
-          const Divider(height: 1),
-          for (final (i, r) in rows.indexed) ...[
-            if (i > 0) const Divider(height: 1, indent: 18, endIndent: 18),
-            _TableRow(
-              onTap: () => onOpen(r.member),
-              child: row([
-                Row(
-                  children: [
-                    MemberPhoto(path: r.member.photoPath, name: r.member.fullName, size: 40),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(r.member.fullName,
-                              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          Text(r.member.code, style: TextStyle(color: muted, fontSize: 12.5, letterSpacing: 1)),
-                        ],
-                      ),
-                    ),
-                  ],
+    final brand = context.brand;
+    return DataGrid<_MemberRow>(
+      rows: rows,
+      noun: 'members',
+      pageSizes: const [25, 50, 100],
+      rowLabel: (r) => 'Open ${r.member.fullName}',
+      onRowTap: (r) => onOpen(r.member),
+      columns: [
+        GridColumn(
+          key: 'member',
+          label: 'Member',
+          flex: 4,
+          sortBy: (r) => r.member.fullName.toLowerCase(),
+          cell: (context, r) {
+            final carry = [
+              if (!DataGrid.shows(context, 'package') && _package(r) != '—') _package(r),
+              if (!DataGrid.shows(context, 'phone')) r.member.phone,
+            ];
+            return Row(
+              children: [
+                MemberPhoto(path: r.member.photoPath, name: r.member.fullName, size: 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(r.member.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                      Text(r.member.code, style: TextStyle(color: brand.muted, fontSize: 12.5, letterSpacing: 1)),
+                      if (carry.isNotEmpty)
+                        Text(carry.join(' · '),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+                      if (!DataGrid.shows(context, 'status'))
+                        Padding(padding: const EdgeInsets.only(top: 4), child: _standing(r)),
+                    ],
+                  ),
                 ),
-                Text(r.member.phone, maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(
-                  r.subs.firstWhere((s) => s.isCurrentOn(today), orElse: () => r.subs.isEmpty ? _none : r.subs.first).planName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(() {
-                  final until = paidUntil(r.subs, today);
-                  if (until != null) return formatDate(until);
-                  final ended = r.subs.where((s) => s.endDate != null).map((s) => s.endDate!).fold<DateTime?>(
-                      null, (a, b) => a == null || b.isAfter(a) ? b : a);
-                  return ended == null ? '—' : formatDate(ended);
-                }(), style: const TextStyle(fontWeight: FontWeight.w600)),
-                StandingChip(
-                  standing: standingOf(r.subs, today),
-                  daysLeft: paidUntil(r.subs, today) == null ? null : BhutanTime.daysBetween(today, paidUntil(r.subs, today)!) + 1,
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [Icon(Icons.chevron_right_rounded, color: muted)],
-                ),
-              ]),
-            ),
-          ],
-        ],
-      ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'phone',
+          label: 'Phone',
+          flex: 2,
+          showFrom: 900,
+          sortBy: (r) => r.member.phone,
+          cell: (context, r) => Text(r.member.phone, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.body)),
+        ),
+        GridColumn(
+          key: 'package',
+          label: 'Package',
+          flex: 3,
+          showFrom: 700,
+          sortBy: (r) => _package(r).toLowerCase(),
+          cell: (context, r) => Text(_package(r),
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _package(r) == '—' ? brand.muted : brand.body)),
+        ),
+        GridColumn(
+          key: 'expiry',
+          label: 'Expiry date',
+          flex: 2,
+          showFrom: 1000,
+          sortBy: (r) => _expiry(r) ?? DateTime(9999),
+          cell: (context, r) {
+            final d = _expiry(r);
+            return Text(d == null ? '—' : formatDate(d),
+                style: TextStyle(fontWeight: FontWeight.w600, color: d == null ? brand.muted : brand.ink));
+          },
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 150,
+          showFrom: 520,
+          // The soonest to run out first; then those with none.
+          sortBy: (r) => paidUntil(r.subs, today) ?? DateTime(9999),
+          cell: (context, r) => _standing(r),
+        ),
+        GridColumn(
+          key: 'open',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, r) => Icon(Icons.chevron_right_rounded, color: brand.muted),
+        ),
+      ],
     );
   }
 
@@ -484,37 +540,6 @@ class _MembersTable extends StatelessWidget {
     status: SubscriptionStatus.cancelled,
     requestedAt: DateTime(2000),
   );
-}
-
-/// A row that lights up under the mouse and opens on a tap.
-class _TableRow extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-
-  const _TableRow({required this.child, required this.onTap});
-
-  @override
-  State<_TableRow> createState() => _TableRowState();
-}
-
-class _TableRowState extends State<_TableRow> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        color: _hover ? context.colors.tertiary.withValues(alpha: 0.05) : Colors.transparent,
-        child: InkWell(
-          onTap: widget.onTap,
-          child: Padding(padding: const EdgeInsets.fromLTRB(18, 10, 12, 10), child: widget.child),
-        ),
-      ),
-    );
-  }
 }
 
 class _MemberTile extends StatelessWidget {
@@ -747,12 +772,12 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
         lastDate: today,
         onChanged: (d) => setState(() => _dob = d),
       ),
-      DropdownButtonFormField<String>(
-        initialValue: _bloodGroup,
+      SearchableDropdown<String?>(
+        value: _bloodGroup,
         decoration: const InputDecoration(labelText: 'Blood group', prefixIcon: Icon(Icons.bloodtype_outlined)),
-        items: [
-          const DropdownMenuItem<String>(value: null, child: Text('Not known')),
-          for (final g in bloodGroups) DropdownMenuItem(value: g, child: Text(g)),
+        options: [
+          const DropdownOption<String?>(null, 'Not known'),
+          for (final g in bloodGroups) DropdownOption<String?>(g, g),
         ],
         onChanged: (g) => setState(() => _bloodGroup = g),
       ),
@@ -1114,10 +1139,10 @@ class _RegisterSummary extends StatelessWidget {
           if (!selling)
             fact('Package', 'Not now')
           else if (sale == null)
-            fact('Package', 'Choose one', color: context.brand.warning)
+            fact('Package', 'Choose one', color: context.brand.readable(context.brand.warning))
           else ...[
             fact('Package', '${sale.plan.name} · ${sale.months == 1 ? '1 month' : '${sale.months} months'}'),
-            fact('Expiry date', formatDate(packageEnd(joined, sale.months)), color: context.brand.success),
+            fact('Expiry date', formatDate(packageEnd(joined, sale.months)), color: context.brand.readable(context.brand.success)),
             fact('Amount', sale.amount == 0 ? 'Free' : '${formatNu(sale.amount)}${sale.method == null ? '' : ' · ${sale.method!.label}'}'),
           ],
           const Divider(height: 28),
@@ -1356,7 +1381,7 @@ class _MemberPageState extends ConsumerState<_MemberPage> {
   Future<void> _renew(BuildContext context) async {
     final subs = membershipsOf(ref.read(gymSubscriptionsProvider(_venueId)).valueOrNull ?? const [], m.id);
     final start = renewalStart(subs, BhutanTime.today());
-    final done = await showDialog<bool>(
+    final done = await showAppDialog<bool>(
       context: context,
       builder: (_) => _RenewDialog(member: m, venueId: _venueId, start: start),
     );

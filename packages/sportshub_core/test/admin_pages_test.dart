@@ -153,10 +153,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Full name *'), findsOneWidget);
       // Owner can't be given from a venue; turned-off roles aren't offered.
-      await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Role *'));
+      await tester.tap(find.widgetWithText(SearchableDropdown<String>, 'Role *'));
       await tester.pumpAndSettle();
-      expect(find.text('Owner'), findsNothing);
-      expect(find.text('Cashier with a rather long role name'), findsNothing);
+      // Among the dropdown's choices (the staff table shows the owner's role).
+      Finder offered(String role) => find.descendant(of: find.byKey(SearchableDropdown.menuKey), matching: find.text(role));
+      expect(offered('Front desk'), findsWidgets, reason: 'the choices are open');
+      expect(offered('Owner'), findsNothing);
+      expect(offered('Cashier with a rather long role name'), findsNothing);
     });
   }
 }

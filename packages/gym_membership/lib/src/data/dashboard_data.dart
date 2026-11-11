@@ -95,6 +95,29 @@ List<RevenuePoint> revenueSeries(Iterable<Payment> payments, DateTime today, Rev
       range,
     );
 
+/// Completed payments from the 1st to [today], against the same days of
+/// last month (to the same date, or that month's last day): the change as a
+/// share (0.12 is 12% more). Null when last month had nothing in those days,
+/// so there's nothing fair to compare with.
+double? incomeChangeMonthToDate(Iterable<Payment> payments, DateTime today) {
+  final thisStart = DateTime(today.year, today.month, 1);
+  final lastStart = DateTime(today.year, today.month - 1, 1);
+  final lastLength = DateTime(today.year, today.month, 0).day;
+  final lastEnd = DateTime(lastStart.year, lastStart.month, today.day < lastLength ? today.day : lastLength);
+  var now = 0;
+  var before = 0;
+  for (final p in payments.where((p) => p.isCompleted)) {
+    final day = _bhutanDay(p.createdAt);
+    if (!day.isBefore(thisStart) && !day.isAfter(today)) {
+      now += p.amount;
+    } else if (!day.isBefore(lastStart) && !day.isAfter(lastEnd)) {
+      before += p.amount;
+    }
+  }
+  if (before == 0) return null;
+  return (now - before) / before;
+}
+
 /// A member's check-ins in [range] up to [today], counted by day (7 and 30
 /// days) or week (90 days).
 List<RevenuePoint> visitSeries(Iterable<GymCheckIn> checkIns, DateTime today, RevenueRange range) =>

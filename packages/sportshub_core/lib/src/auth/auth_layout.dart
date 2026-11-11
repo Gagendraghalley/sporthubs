@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -63,28 +64,43 @@ class AuthLayout extends StatelessWidget {
     );
   }
 
+  /// The title, its line and the fields arrive one after another, a beat
+  /// behind the card; the fields as one, so nothing shuffles when an error
+  /// appears among them.
   Widget _form(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 30,
-            height: 1.15,
-            letterSpacing: -0.6,
-            fontWeight: FontWeight.w800,
-            color: dark ? Colors.white : BrandColors.navy,
+        FadeSlideIn(
+          delay: const Duration(milliseconds: 120),
+          offset: 12,
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 30,
+              height: 1.15,
+              letterSpacing: -0.6,
+              fontWeight: FontWeight.w800,
+              color: context.brand.ink,
+            ),
           ),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: 8),
-          Text(subtitle!, style: TextStyle(fontSize: 15, height: 1.4, fontWeight: FontWeight.w500, color: context.brand.muted)),
+          FadeSlideIn(
+            delay: const Duration(milliseconds: 180),
+            offset: 12,
+            child: Text(subtitle!,
+                style: TextStyle(fontSize: 15, height: 1.4, fontWeight: FontWeight.w500, color: context.brand.muted)),
+          ),
         ],
         const SizedBox(height: 26),
-        ...children,
+        FadeSlideIn(
+          delay: const Duration(milliseconds: 240),
+          offset: 12,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: children),
+        ),
       ],
     );
   }
@@ -94,7 +110,9 @@ class AuthLayout extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _Photo(),
+        // The same photo on every sign-in page: it stays put as they move
+        // between them, and only the card changes.
+        const Hero(tag: _Photo.heroTag, child: _Photo()),
         _Wash(side: side),
         const CustomPaint(painter: _WavePainter()),
         SafeArea(
@@ -125,7 +143,9 @@ class AuthLayout extends StatelessWidget {
                             color: context.colors.surface,
                             borderRadius: BorderRadius.circular(28),
                             border: dark ? Border.all(color: context.brand.glassBorder) : null,
-                            boxShadow: const [BoxShadow(color: Color(0x47000000), blurRadius: 50, offset: Offset(0, 24))],
+                            boxShadow: dark
+                                ? const [BoxShadow(color: Color(0x47000000), blurRadius: 50, offset: Offset(0, 24))]
+                                : const [BoxShadow(color: Color(0x40050B1C), blurRadius: 44, offset: Offset(0, 20))],
                           ),
                           child: _form(context),
                         ),
@@ -152,7 +172,7 @@ class AuthLayout extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                const _Photo(),
+                const Hero(tag: _Photo.heroTag, child: _Photo()),
                 const _Wash(side: AuthSide.signIn, banner: true),
                 const CustomPaint(painter: _WavePainter(banner: true)),
                 Padding(
@@ -188,12 +208,17 @@ class AuthLayout extends StatelessWidget {
   }
 }
 
-/// The photo, cropped to fill; navy if it can't be read.
+/// The photo, cropped to fill; navy if it can't be read. The first time,
+/// it fades up from the navy and settles from a slight zoom: once, then
+/// still.
 class _Photo extends StatelessWidget {
   const _Photo();
 
+  static const heroTag = 'sportshub-auth-photo';
+
   @override
   Widget build(BuildContext context) {
+    final still = reduceMotion(context);
     return Image.asset(
       AuthLayout.photo,
       package: SportsHubLogo.package,
@@ -201,6 +226,22 @@ class _Photo extends StatelessWidget {
       alignment: const Alignment(-0.2, -0.6),
       excludeFromSemantics: true,
       gaplessPlayback: true,
+      frameBuilder: (context, child, frame, synchronous) {
+        // Already in memory (another sign-in page): no entrance.
+        if (synchronous || still) return child;
+        final shown = frame != null;
+        return AnimatedOpacity(
+          opacity: shown ? 1 : 0,
+          duration: const Duration(milliseconds: 700),
+          curve: Motion.ease,
+          child: AnimatedScale(
+            scale: shown ? 1 : 1.06,
+            duration: const Duration(milliseconds: 1600),
+            curve: Motion.ease,
+            child: child,
+          ),
+        );
+      },
       errorBuilder: (_, __, ___) => const DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -564,12 +605,13 @@ class _AuthInputs extends StatelessWidget {
     final dark = theme.brightness == Brightness.dark;
     OutlineInputBorder outline(Color color, [double width = 1]) =>
         OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: color, width: width));
-    final edge = dark ? brand.glassBorder : const Color(0xFFE1E6EF);
+    final edge = brand.fieldBorder;
     return Theme(
       data: theme.copyWith(
         inputDecorationTheme: theme.inputDecorationTheme.copyWith(
-          fillColor: dark ? brand.card : Colors.white,
-          prefixIconColor: brand.muted,
+          fillColor: brand.card,
+          prefixIconColor: WidgetStateColor.resolveWith(
+              (states) => states.contains(WidgetState.focused) && !dark ? LightColors.orangeText : brand.muted),
           suffixIconColor: brand.muted,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
           border: outline(edge),
@@ -579,7 +621,8 @@ class _AuthInputs extends StatelessWidget {
                 color: states.contains(WidgetState.error)
                     ? theme.colorScheme.error
                     : states.contains(WidgetState.focused)
-                        ? brand.accent
+                        // On white, the orange that reads as text.
+                        ? (dark ? brand.accent : LightColors.orangeText)
                         : brand.muted,
               )),
         ),
@@ -602,13 +645,16 @@ class AuthPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    final accent = context.brand.accent;
+    return Pressable(
+      enabled: !busy && onPressed != null,
+      child: DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(colors: [Color(0xFFFF8A3D), BrandColors.orange]),
+        gradient: LinearGradient(colors: [const Color(0xFFFF8A3D), accent]),
         boxShadow: [
           BoxShadow(
-            color: BrandColors.orange.withValues(alpha: 0.38),
+            color: accent.withValues(alpha: 0.38),
             blurRadius: 24,
             spreadRadius: -8,
             offset: const Offset(0, 12),
@@ -627,15 +673,53 @@ class AuthPrimaryButton extends StatelessWidget {
           shape: const StadiumBorder(),
           textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 16.5),
         ),
-        child: busy
-            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon != null) ...[Icon(icon, size: 21), const SizedBox(width: 10)],
-                  Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-                ],
-              ),
+        // The words give way to a spinner, and back, without a jump.
+        child: AnimatedSwitcher(
+          duration: Motion.of(context, Motion.press),
+          transitionBuilder: (child, a) => FadeTransition(
+            opacity: a,
+            child: ScaleTransition(scale: Tween(begin: 0.85, end: 1.0).animate(a), child: child),
+          ),
+          child: busy
+              ? const SizedBox(
+                  key: ValueKey('busy'),
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+              : Row(
+                  key: const ValueKey('ready'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[Icon(icon, size: 21), const SizedBox(width: 10)],
+                    Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+/// Show or hide a password: the eye opens and closes rather than swapping.
+class PasswordEye extends StatelessWidget {
+  final bool hidden;
+  final VoidCallback onPressed;
+
+  const PasswordEye({super.key, required this.hidden, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: hidden ? 'Show password' : 'Hide password',
+      onPressed: onPressed,
+      icon: AnimatedSwitcher(
+        duration: Motion.of(context, Motion.hover),
+        transitionBuilder: (child, a) => FadeTransition(
+          opacity: a,
+          child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(a), child: child),
+        ),
+        child: Icon(hidden ? Icons.visibility_off_outlined : Icons.visibility_outlined, key: ValueKey(hidden)),
       ),
     );
   }
@@ -651,19 +735,22 @@ class AuthSecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(52),
-        backgroundColor: dark ? context.brand.card : Colors.white,
-        foregroundColor: dark ? Colors.white : BrandColors.navy,
-        side: BorderSide(color: dark ? context.brand.glassBorder : const Color(0xFFE1E6EF)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w600, fontSize: 15),
+    final brand = context.brand;
+    return Pressable(
+      enabled: onPressed != null,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          backgroundColor: brand.card,
+          foregroundColor: brand.pick(LightColors.navy, Colors.white),
+          side: BorderSide(color: brand.fieldBorder),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w600, fontSize: 15),
+        ),
+        icon: Icon(icon, size: 21, color: brand.accent),
+        label: Text(label),
       ),
-      icon: Icon(icon, size: 21, color: context.brand.accent),
-      label: Text(label),
     );
   }
 }
@@ -748,7 +835,8 @@ class AuthNote extends StatelessWidget {
   }
 }
 
-/// What went wrong, on a soft red.
+/// What went wrong, on a soft red. It fades in with one short shake (a
+/// head shaking 'no'), and again when the message changes.
 class AuthError extends StatelessWidget {
   final String text;
 
@@ -756,6 +844,23 @@ class AuthError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (reduceMotion(context)) return _box(context);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(text),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 460),
+      builder: (context, t, child) {
+        final dx = 6 * (1 - t) * math.sin(t * 3 * 2 * math.pi);
+        return Opacity(
+          opacity: Motion.ease.transform((t * 2.5).clamp(0, 1)),
+          child: Transform.translate(offset: Offset(dx, 0), child: child),
+        );
+      },
+      child: _box(context),
+    );
+  }
+
+  Widget _box(BuildContext context) {
     final danger = context.brand.danger;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),

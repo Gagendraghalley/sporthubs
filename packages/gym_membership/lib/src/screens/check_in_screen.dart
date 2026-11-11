@@ -573,7 +573,7 @@ class _Outcome extends StatelessWidget {
           Icon(icon, color: color, size: 22),
           const SizedBox(width: 8),
           Flexible(
-            child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+            child: Text(text, style: TextStyle(color: context.brand.readable(color), fontWeight: FontWeight.w800, letterSpacing: 1.2)),
           ),
         ],
       ),
@@ -617,7 +617,7 @@ class _ResultCard extends StatelessWidget {
                       Text('${result.planName} · until ${formatDate(result.endDate)}'),
                       Text(
                         result.daysLeft == 1 ? 'Last day of their package' : '${result.daysLeft} days left',
-                        style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                        style: TextStyle(color: brand.readable(color), fontWeight: FontWeight.w700),
                       ),
                       if (result.earlierToday > 0) Text('Already checked in earlier today', style: TextStyle(color: brand.muted)),
                     ],

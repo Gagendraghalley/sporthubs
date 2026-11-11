@@ -81,17 +81,13 @@ class _PackageFieldsState extends ConsumerState<PackageFields> {
             padding: EdgeInsets.only(bottom: 12),
             child: FormHint('This gym has no packages on sale yet. Add them under Plans & prices.'),
           ),
-        DropdownButtonFormField<String>(
-          initialValue: plan?.id,
-          isExpanded: true,
+        SearchableDropdown<String>(
+          value: plan?.id,
           decoration: const InputDecoration(labelText: 'Package *'),
-          items: [
+          options: [
             for (final p in list)
-              DropdownMenuItem(
-                value: p.id,
-                child: Text('${p.name} · ${p.price == 0 ? 'Free' : formatNu(p.price)} / ${formatDuration(p.durationDays)}',
-                    overflow: TextOverflow.ellipsis),
-              ),
+              DropdownOption(
+                  p.id, '${p.name} · ${p.price == 0 ? 'Free' : formatNu(p.price)} / ${formatDuration(p.durationDays)}'),
           ],
           onChanged: (id) => _choose(list.where((p) => p.id == id).firstOrNull),
           validator: (id) => id == null ? 'Choose the package' : null,
@@ -101,13 +97,12 @@ class _PackageFieldsState extends ConsumerState<PackageFields> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: DropdownButtonFormField<int>(
+              child: SearchableDropdown<int>(
                 key: ValueKey('months-${plan?.id}'),
-                initialValue: _months,
-                isExpanded: true,
+                value: _months,
                 decoration: const InputDecoration(labelText: 'Signed for *'),
-                items: [
-                  for (final m in packageMonthOptions) DropdownMenuItem(value: m, child: Text(m == 1 ? '1 month' : '$m months')),
+                options: [
+                  for (final m in packageMonthOptions) DropdownOption(m, m == 1 ? '1 month' : '$m months'),
                 ],
                 onChanged: plan == null ? null : (m) => _choose(plan, months: m),
               ),

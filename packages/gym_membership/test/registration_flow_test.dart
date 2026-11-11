@@ -98,11 +98,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Expiry date'), findsOneWidget);
 
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.tap(find.byType(SearchableDropdown<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Standard Membership').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<int>));
+    await tester.tap(find.byType(SearchableDropdown<int>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('3 months').last);
     await tester.pumpAndSettle();

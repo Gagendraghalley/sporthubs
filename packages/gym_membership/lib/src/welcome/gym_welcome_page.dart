@@ -99,7 +99,12 @@ class _GymWelcomePageState extends ConsumerState<GymWelcomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Hero(layout: layout, onGetStarted: _signUp, onExplore: () => _scrollTo(_servicesKey)),
+                  _Hero(
+                    layout: layout,
+                    scroll: _scroll,
+                    onGetStarted: _signUp,
+                    onExplore: () => _scrollTo(_servicesKey),
+                  ),
                   _Highlights(layout: layout),
                   _Reveal(
                     child: _Services(
@@ -180,19 +185,38 @@ class _Layout {
   double get titleSize => wide ? 44 : (medium ? 38 : 30);
 }
 
-/// The page's text colours, for light or dark.
+/// The page's colours, for light or dark; mixed while the theme switches,
+/// so bands and cards glide rather than flash.
 class _Ink {
-  final bool dark;
+  /// 0 light, 1 dark ([Brand.darkness]).
+  final double t;
 
-  const _Ink(this.dark);
+  const _Ink(this.t);
 
-  factory _Ink.of(BuildContext context) => _Ink(Theme.of(context).brightness == Brightness.dark);
+  factory _Ink.of(BuildContext context) => _Ink(context.brand.darkness);
 
-  Color get heading => dark ? Colors.white : BrandColors.navy;
-  Color get body => dark ? const Color(0xFFC5CCDA) : const Color(0xFF3A4560);
+  bool get dark => t >= 0.5;
 
-  /// Behind icons: a pale blue, or a faint white in the dark.
-  Color get tint => dark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE6EEFA);
+  Color pick(Color light, Color dark) => Color.lerp(light, dark, t)!;
+
+  Color get heading => pick(LightColors.ink, Colors.white);
+  Color get body => pick(LightColors.body, const Color(0xFFC5CCDA));
+
+  /// Behind icons: a cool pale grey-blue, or a faint white in the dark.
+  Color get tint => pick(const Color(0xFFEAF0F8), Colors.white.withValues(alpha: 0.08));
+
+  /// A card on the page.
+  Color get card => pick(LightColors.card, BrandColors.slateNavy);
+
+  /// Under a card: a soft navy haze in the light, a deep shadow in the dark.
+  List<BoxShadow> shadow({double light = 0.07, double dark = 0.3, double blur = 24, double dy = 10}) => [
+        BoxShadow(
+          color: pick(LightColors.navy.withValues(alpha: light), Colors.black.withValues(alpha: dark)),
+          blurRadius: blur,
+          spreadRadius: this.dark ? 0 : -4,
+          offset: Offset(0, dy),
+        ),
+      ];
 }
 
 /// [child] centred, no wider than the content, with room at the sides.
@@ -359,50 +383,68 @@ class _Hero extends StatelessWidget {
   final VoidCallback onGetStarted;
   final VoidCallback onExplore;
 
-  const _Hero({required this.layout, required this.onGetStarted, required this.onExplore});
+  /// The page's scroll: the photo drifts up a little slower than the page
+  /// (a gentle depth), only as they scroll.
+  final ScrollController scroll;
 
-  /// Behind the words, and what the photo fades into.
-  static Color background(bool dark) => dark ? BrandColors.navy : const Color(0xFFEEF3FA);
+  const _Hero({required this.layout, required this.onGetStarted, required this.onExplore, required this.scroll});
+
+  /// [child] moved by a share of the scroll, while the top is on screen.
+  Widget _parallax(BuildContext context, Widget child, {double rate = 0.12}) {
+    if (reduceMotion(context)) return child;
+    return AnimatedBuilder(
+      animation: scroll,
+      child: child,
+      builder: (context, child) {
+        final offset = scroll.hasClients ? scroll.offset.clamp(0.0, 900.0) : 0.0;
+        return Transform.translate(offset: Offset(0, offset * rate), child: child);
+      },
+    );
+  }
+
+  /// The sample card and the check-in note: they arrive after the photos,
+  /// then float a little, out of step, and settle.
+  static Widget _card(Widget child, {required int order}) => FadeSlideIn(
+        delay: Duration(milliseconds: 520 + 140 * order),
+        offset: 26,
+        child: GentleFloat(phase: order * 0.35, distance: order == 0 ? 7 : 5, child: child),
+      );
 
   @override
   Widget build(BuildContext context) {
     final ink = _Ink.of(context);
-    final bg = background(ink.dark);
+    // Behind the words, and what the photo fades into.
+    final bg = ink.pick(LightColors.backgroundAlt, BrandColors.navy);
     final headlineSize = layout.wide ? 70.0 : (layout.medium ? 56.0 : 42.0);
+    final headline = TextStyle(
+      fontSize: headlineSize,
+      fontWeight: FontWeight.w800,
+      fontStyle: FontStyle.italic,
+      height: 1.05,
+      letterSpacing: -1.6,
+      color: ink.heading,
+    );
+    // The headline arrives a line at a time, then what it is, the buttons and
+    // the facts: one short cascade on arrival, then still.
     final words = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _Eyebrow('SPORTS & FITNESS PLATFORM', lineAfter: true),
-        const SizedBox(height: 18),
-        Text.rich(
-          TextSpan(
-            children: [
-              const TextSpan(text: 'One Platform.\nEvery Sport.\n'),
-              TextSpan(
-                text: 'Endless Possibilities.',
-                style: TextStyle(color: ink.dark ? BrandColors.orange : BrandColors.orangeText),
-              ),
-            ],
-          ),
-          style: TextStyle(
-            fontSize: headlineSize,
-            fontWeight: FontWeight.w800,
-            fontStyle: FontStyle.italic,
-            height: 1.05,
-            letterSpacing: -1.6,
-            color: ink.heading,
+      children: staggered(step: const Duration(milliseconds: 90), offset: 18, [
+        const Padding(padding: EdgeInsets.only(bottom: 18), child: _Eyebrow('SPORTS & FITNESS PLATFORM', lineAfter: true)),
+        Text('One Platform.', style: headline),
+        Text('Every Sport.', style: headline),
+        Text('Endless Possibilities.',
+            style: headline.copyWith(color: ink.dark ? BrandColors.orange : LightColors.orangeText)),
+        Padding(
+          padding: const EdgeInsets.only(top: 22, bottom: 34),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: Text(
+              'Discover gyms, manage memberships and track visits in SportsHub. '
+              'Connected sports services help bring facilities and activities across Bhutan together.',
+              style: TextStyle(fontSize: layout.wide ? 18.5 : 16.5, height: 1.6, color: ink.body),
+            ),
           ),
         ),
-        const SizedBox(height: 22),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Text(
-            'Discover gyms, manage memberships and track visits in SportsHub. '
-            'Connected sports services help bring facilities and activities across Bhutan together.',
-            style: TextStyle(fontSize: layout.wide ? 18.5 : 16.5, height: 1.6, color: ink.body),
-          ),
-        ),
-        const SizedBox(height: 34),
         Wrap(
           spacing: 14,
           runSpacing: 12,
@@ -411,23 +453,25 @@ class _Hero extends StatelessWidget {
             _PillButton(label: 'Explore Services', outlined: true, onPressed: onExplore),
           ],
         ),
-        const SizedBox(height: 30),
-        Wrap(
-          spacing: 22,
-          runSpacing: 10,
-          children: [
-            for (final point in const ['Made for Bhutan', 'Gym memberships live', 'Built for every sport'])
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.check_circle_rounded, size: 18, color: BrandColors.orange),
-                  const SizedBox(width: 7),
-                  Text(point, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: ink.body)),
-                ],
-              ),
-          ],
+        Padding(
+          padding: const EdgeInsets.only(top: 30),
+          child: Wrap(
+            spacing: 22,
+            runSpacing: 10,
+            children: [
+              for (final point in const ['Made for Bhutan', 'Gym memberships live', 'Built for every sport'])
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_rounded, size: 18, color: context.brand.accent),
+                    const SizedBox(width: 7),
+                    Text(point, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: ink.body)),
+                  ],
+                ),
+            ],
+          ),
         ),
-      ],
+      ]),
     );
     final top = MediaQuery.paddingOf(context).top + _NavBar.height;
     return ClipPath(
@@ -444,7 +488,10 @@ class _Hero extends StatelessWidget {
     final photoLeft = layout.width * 0.4;
     return Stack(
       children: [
-        Positioned(left: -200, top: 40, child: GymGlow(color: BrandColors.blue.withValues(alpha: 0.16), size: 560)),
+        Positioned(
+            left: -200,
+            top: 40,
+            child: GymGlow(color: BrandColors.blue.withValues(alpha: _Ink.of(context).dark ? 0.16 : 0.08), size: 560)),
         Positioned(
           left: photoLeft,
           top: 0,
@@ -453,7 +500,7 @@ class _Hero extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              const _SportPhotoMosaic(),
+              ClipRect(child: _parallax(context, const _SportPhotoMosaic())),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -490,16 +537,19 @@ class _Hero extends StatelessWidget {
                     height: 470,
                     child: Stack(
                       clipBehavior: Clip.none,
-                      children: const [
-                        Positioned(left: 0, bottom: 10, child: _MiniCard()),
+                      children: [
+                        Positioned(left: 0, bottom: 10, child: _card(const _MiniCard(), order: 0)),
                         Positioned(
                           right: 10,
                           bottom: 30,
-                          child: _FloatingNote(
-                            icon: Icons.check_rounded,
-                            iconColor: BrandColors.green,
-                            title: 'Checked in',
-                            text: 'Today, 6:42 AM',
+                          child: _card(
+                            const _FloatingNote(
+                              icon: Icons.check_rounded,
+                              iconColor: BrandColors.green,
+                              title: 'Checked in',
+                              text: 'Today, 6:42 AM',
+                            ),
+                            order: 1,
                           ),
                         ),
                       ],
@@ -551,16 +601,21 @@ class _Hero extends StatelessWidget {
                         left: 12,
                         bottom: 0,
                         child: Transform.scale(
-                            scale: layout.medium ? 1 : 0.86, alignment: Alignment.bottomLeft, child: const _MiniCard()),
+                            scale: layout.medium ? 1 : 0.86,
+                            alignment: Alignment.bottomLeft,
+                            child: _card(const _MiniCard(), order: 0)),
                       ),
-                      const Positioned(
+                      Positioned(
                         right: 12,
                         top: 16,
-                        child: _FloatingNote(
-                          icon: Icons.check_rounded,
-                          iconColor: BrandColors.green,
-                          title: 'Checked in',
-                          text: 'Today, 6:42 AM',
+                        child: _card(
+                          const _FloatingNote(
+                            icon: Icons.check_rounded,
+                            iconColor: BrandColors.green,
+                            title: 'Checked in',
+                            text: 'Today, 6:42 AM',
+                          ),
+                          order: 1,
                         ),
                       ),
                     ],
@@ -587,30 +642,38 @@ class _SportPhotoMosaic extends StatelessWidget {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
+        // The big photo fades up, then each sport settles into place in
+        // turn, a little after the headline.
+        Widget reveal(int order, Widget child) => FadeSlideIn(
+              delay: Duration(milliseconds: 160 + 120 * order),
+              offset: order == 0 ? 0 : 20,
+              duration: const Duration(milliseconds: 620),
+              child: child,
+            );
         return Stack(
           fit: StackFit.expand,
           children: [
-            const GymPhoto('outdoor', alignment: Alignment(0.55, 0)),
+            reveal(0, const GymPhoto('outdoor', alignment: Alignment(0.55, 0))),
             Positioned(
               left: width * 0.035,
               top: height * 0.06,
               width: width * 0.34,
               height: height * 0.40,
-              child: const _SportPhotoTile(photo: 'indoor'),
+              child: reveal(1, const _SportPhotoTile(photo: 'indoor')),
             ),
             Positioned(
               right: width * 0.05,
               top: height * 0.15,
               width: width * 0.37,
               height: height * 0.42,
-              child: const _SportPhotoTile(photo: 'racket'),
+              child: reveal(2, const _SportPhotoTile(photo: 'racket')),
             ),
             Positioned(
               left: width * 0.29,
               bottom: height * 0.06,
               width: width * 0.38,
               height: height * 0.36,
-              child: const _SportPhotoTile(photo: 'swimming'),
+              child: reveal(3, const _SportPhotoTile(photo: 'swimming')),
             ),
           ],
         );
@@ -841,15 +904,81 @@ class _RevealState extends State<_Reveal> {
   @override
   Widget build(BuildContext context) {
     const duration = Duration(milliseconds: 750);
-    return AnimatedOpacity(
-      opacity: _shown ? 1 : 0,
-      duration: duration,
-      curve: Curves.easeOut,
-      child: AnimatedContainer(
+    return _Revealed(
+      shown: _shown,
+      child: AnimatedOpacity(
+        opacity: _shown ? 1 : 0,
         duration: duration,
-        curve: Curves.easeOutCubic,
-        transform: Matrix4.translationValues(0, _shown ? 0 : rise, 0),
-        child: widget.child,
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.translationValues(0, _shown ? 0 : rise, 0),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether the section around has scrolled into view, for what's in it.
+class _Revealed extends InheritedWidget {
+  final bool shown;
+
+  const _Revealed({required this.shown, required super.child});
+
+  /// Shown, or not in a section that waits (it shows at once).
+  static bool of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<_Revealed>()?.shown ?? true;
+
+  @override
+  bool updateShouldNotify(_Revealed old) => old.shown != shown;
+}
+
+/// One of a section's cards: it rises into place [order] beats after the
+/// section comes into view, so a row of cards arrives one after another.
+class _RevealItem extends StatefulWidget {
+  final int order;
+  final Widget child;
+
+  const _RevealItem({required this.order, required this.child});
+
+  @override
+  State<_RevealItem> createState() => _RevealItemState();
+}
+
+class _RevealItemState extends State<_RevealItem> with SingleTickerProviderStateMixin {
+  static const _beat = Duration(milliseconds: 80);
+  late final Duration _delay = _beat * widget.order.clamp(0, 8) + const Duration(milliseconds: 150);
+  late final AnimationController _c = AnimationController(vsync: this, duration: _delay + Motion.card);
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: Interval(_delay.inMilliseconds / (_delay + Motion.card).inMilliseconds, 1, curve: Motion.ease),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotion(context)) {
+      _c.value = 1;
+    } else if (_Revealed.of(context) && !_c.isAnimating && !_c.isCompleted) {
+      _c.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      child: widget.child,
+      builder: (context, child) => Opacity(
+        opacity: _t.value,
+        child: Transform.translate(offset: Offset(0, 24 * (1 - _t.value)), child: child),
       ),
     );
   }
@@ -883,24 +1012,22 @@ class _Highlights extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = _Ink.of(context);
     final brand = context.brand;
-    final cells = [for (final item in items) _HighlightCell(item: item)];
+    final cells = [
+      for (final (i, item) in items.indexed) _RevealItem(order: i + 2, child: _HighlightCell(item: item)),
+    ];
     return Transform.translate(
       offset: const Offset(0, -_Layout.overlap),
       child: _Frame(
         layout: layout,
-        child: Container(
+        child: FadeSlideIn(
+          delay: const Duration(milliseconds: 200),
+          child: Container(
           padding: EdgeInsets.symmetric(vertical: 24, horizontal: layout.wide ? 8 : 16),
           decoration: BoxDecoration(
-            color: ink.dark ? BrandColors.slateNavy : Colors.white,
+            color: ink.card,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: brand.glassBorder),
-            boxShadow: [
-              BoxShadow(
-                color: (ink.dark ? Colors.black : BrandColors.navy).withValues(alpha: ink.dark ? 0.4 : 0.09),
-                blurRadius: 32,
-                offset: const Offset(0, 14),
-              ),
-            ],
+            boxShadow: ink.shadow(light: 0.08, dark: 0.4, blur: 32, dy: 14),
           ),
           child: layout.wide
               ? IntrinsicHeight(
@@ -915,28 +1042,50 @@ class _Highlights extends StatelessWidget {
                 )
               : _Grid(columns: layout.medium ? 3 : 2, spacing: 18, children: cells),
         ),
+        ),
       ),
     );
   }
 }
 
-class _HighlightCell extends StatelessWidget {
+/// What SportsHub does, one thing: under the mouse its icon's well warms to
+/// orange and lifts a little.
+class _HighlightCell extends StatefulWidget {
   final _Highlight item;
 
   const _HighlightCell({required this.item});
 
   @override
+  State<_HighlightCell> createState() => _HighlightCellState();
+}
+
+class _HighlightCellState extends State<_HighlightCell> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final ink = _Ink.of(context);
-    return Padding(
+    final accent = context.brand.accent;
+    final hover = _hover && !reduceMotion(context);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
         children: [
-          Container(
+          AnimatedContainer(
+            duration: Motion.hover,
+            curve: Motion.ease,
             width: 52,
             height: 52,
-            decoration: BoxDecoration(color: ink.tint, borderRadius: BorderRadius.circular(16)),
-            child: Icon(item.icon, size: 26, color: BrandColors.orange),
+            transform: Matrix4.translationValues(0, hover ? -3 : 0, 0),
+            decoration: BoxDecoration(
+              color: hover ? accent.withValues(alpha: 0.14) : ink.tint,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(item.icon, size: 26, color: accent),
           ),
           const SizedBox(height: 12),
           Text(
@@ -951,6 +1100,7 @@ class _HighlightCell extends StatelessWidget {
             style: TextStyle(fontSize: 13, color: context.brand.muted, height: 1.35),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1033,7 +1183,10 @@ class _Services extends StatelessWidget {
     );
     final tiles = _Grid(
       columns: layout.medium ? 3 : 2,
-      children: [for (final s in services) _ServiceTile(service: s, onTap: s.open ? onFindGym : null)],
+      children: [
+        for (final (i, s) in services.indexed)
+          _RevealItem(order: i, child: _ServiceTile(service: s, onTap: s.open ? onFindGym : null)),
+      ],
     );
     return Padding(
       padding: EdgeInsets.only(top: layout.section - _Layout.overlap, bottom: layout.section),
@@ -1075,6 +1228,10 @@ class _ServiceTileState extends State<_ServiceTile> {
   Widget build(BuildContext context) {
     final service = widget.service;
     final badge = service.open ? 'Open now' : 'Coming soon';
+    final ink = _Ink.of(context);
+    final hover = _hover && !reduceMotion(context);
+    // In the light, a navy haze under the photo rather than a grey smudge.
+    final shade = ink.pick(LightColors.navy, Colors.black);
     return Semantics(
       button: widget.onTap != null,
       label: '${service.name}, $badge',
@@ -1084,14 +1241,17 @@ class _ServiceTileState extends State<_ServiceTile> {
         onExit: (_) => setState(() => _hover = false),
         cursor: widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+          duration: Motion.hover,
+          curve: Motion.ease,
+          transform: Matrix4.translationValues(0, hover ? -4 : 0, 0),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: _hover ? 0.28 : 0.14),
-                blurRadius: _hover ? 26 : 14,
-                offset: Offset(0, _hover ? 14 : 6),
+                color: shade.withValues(alpha: hover ? (ink.dark ? 0.28 : 0.2) : (ink.dark ? 0.14 : 0.1)),
+                blurRadius: hover ? 26 : 14,
+                spreadRadius: ink.dark ? 0 : -2,
+                offset: Offset(0, hover ? 14 : 6),
               ),
             ],
           ),
@@ -1103,9 +1263,9 @@ class _ServiceTileState extends State<_ServiceTile> {
                 fit: StackFit.expand,
                 children: [
                   AnimatedScale(
-                    scale: _hover ? 1.07 : 1,
+                    scale: hover ? 1.07 : 1,
                     duration: const Duration(milliseconds: 600),
-                    curve: Curves.easeOutCubic,
+                    curve: Motion.ease,
                     child: GymPhoto(service.photo),
                   ),
                   DecoratedBox(
@@ -1138,10 +1298,12 @@ class _ServiceTileState extends State<_ServiceTile> {
                       ),
                     ),
                   ),
-                  Positioned(
+                  AnimatedPositioned(
+                    duration: Motion.hover,
+                    curve: Motion.ease,
                     left: 10,
                     right: 10,
-                    bottom: 14,
+                    bottom: hover ? 18 : 14,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1218,10 +1380,13 @@ class _About extends StatelessWidget {
             child: _Check(point),
           ),
         const SizedBox(height: 16),
+        // Navy in the light, blue in the dark; white words on either (they
+        // were navy on navy in the light, so the button read as empty).
         _PillButton(
           label: 'Know More',
           icon: Icons.arrow_forward_rounded,
-          color: ink.dark ? BrandColors.blue : BrandColors.navy,
+          color: ink.dark ? BrandColors.blue : LightColors.navy,
+          foreground: ink.dark ? BrandColors.navy : Colors.white,
           onPressed: onKnowMore,
         ),
       ],
@@ -1230,10 +1395,12 @@ class _About extends StatelessWidget {
       columns: layout.wide ? 1 : (layout.medium ? 3 : 1),
       spacing: 22,
       children: [
-        for (final (icon, value, label) in facts)
-          Row(
+        for (final (i, (icon, value, label)) in facts.indexed)
+          _RevealItem(
+            order: i + 2,
+            child: Row(
             children: [
-              Icon(icon, size: 32, color: BrandColors.orange),
+              Icon(icon, size: 32, color: context.brand.accent),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -1246,12 +1413,13 @@ class _About extends StatelessWidget {
               ),
             ],
           ),
+          ),
       ],
     );
     return Container(
       margin: EdgeInsets.only(bottom: layout.section),
       padding: EdgeInsets.symmetric(vertical: layout.section * 0.75),
-      color: ink.dark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFEDF2F9),
+      color: ink.pick(LightColors.backgroundAlt, Colors.white.withValues(alpha: 0.03)),
       child: _Frame(
         layout: layout,
         child: layout.wide
@@ -1409,10 +1577,13 @@ class _Steps extends StatelessWidget {
             const _Eyebrow('HOW IT WORKS', lineBefore: true, lineAfter: true),
             const SizedBox(height: 14),
             Text.rich(
-              const TextSpan(
+              TextSpan(
                 children: [
-                  TextSpan(text: 'Get Started in '),
-                  TextSpan(text: '5 Simple Steps', style: TextStyle(color: BrandColors.orange)),
+                  const TextSpan(text: 'Get Started in '),
+                  // On the light page, the orange that reads as text.
+                  TextSpan(
+                      text: '5 Simple Steps',
+                      style: TextStyle(color: ink.dark ? BrandColors.orange : LightColors.orangeText)),
                 ],
               ),
               textAlign: TextAlign.center,
@@ -1429,13 +1600,18 @@ class _Steps extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Each step, then the arrow to the next, in turn: the
+                  // journey reads left to right as it arrives.
                   for (var i = 0; i < steps.length; i++) ...[
                     if (i > 0)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 28),
-                        child: Icon(Icons.arrow_forward_rounded, color: BrandColors.orange, size: 22),
+                      _RevealItem(
+                        order: i * 2 - 1,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 28),
+                          child: Icon(Icons.arrow_forward_rounded, color: context.brand.accent, size: 22),
+                        ),
                       ),
-                    Expanded(child: _StepColumn(number: i + 1, step: steps[i])),
+                    Expanded(child: _RevealItem(order: i * 2, child: _StepColumn(number: i + 1, step: steps[i]))),
                   ],
                 ],
               )
@@ -1443,7 +1619,10 @@ class _Steps extends StatelessWidget {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
                 child: Column(
-                  children: [for (var i = 0; i < steps.length; i++) _StepRow(number: i + 1, step: steps[i])],
+                  children: [
+                    for (var i = 0; i < steps.length; i++)
+                      _RevealItem(order: i, child: _StepRow(number: i + 1, step: steps[i])),
+                  ],
                 ),
               ),
           ],
@@ -1599,7 +1778,10 @@ class _Plans extends StatelessWidget {
         _PillButton(label: 'See plans at gyms', icon: Icons.arrow_forward_rounded, onPressed: onFindGym),
       ],
     );
-    final cards = [for (final k in kinds) _PlanCard(kind: k, onFindGym: onFindGym)];
+    final cards = [
+      for (final (i, k) in kinds.indexed)
+        _RevealItem(order: i + 1, child: HoverLift(radius: 20, lift: 4, child: _PlanCard(kind: k, onFindGym: onFindGym))),
+    ];
     return Padding(
       padding: EdgeInsets.only(bottom: layout.section),
       child: _Frame(
@@ -1648,27 +1830,14 @@ class _PlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = _Ink.of(context);
     final brand = context.brand;
-    final orangeTint = BrandColors.orange.withValues(alpha: ink.dark ? 0.12 : 0.06);
+    final orangeTint = brand.accent.withValues(alpha: ink.dark ? 0.12 : 0.05);
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: kind.featured ? Color.alphaBlend(orangeTint, ink.dark ? BrandColors.slateNavy : Colors.white) : null,
-        gradient: kind.featured
-            ? null
-            : LinearGradient(
-                colors: ink.dark
-                    ? const [BrandColors.slateNavy, BrandColors.slateNavy]
-                    : const [Colors.white, Colors.white]),
+        color: kind.featured ? Color.alphaBlend(orangeTint, ink.card) : ink.card,
         borderRadius: BorderRadius.circular(20),
-        border:
-            Border.all(color: kind.featured ? BrandColors.orange : brand.glassBorder, width: kind.featured ? 1.6 : 1),
-        boxShadow: [
-          BoxShadow(
-            color: (ink.dark ? Colors.black : BrandColors.navy).withValues(alpha: ink.dark ? 0.3 : 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        border: Border.all(color: kind.featured ? brand.accent : brand.glassBorder, width: kind.featured ? 1.6 : 1),
+        boxShadow: ink.shadow(light: kind.featured ? 0.1 : 0.06),
       ),
       // Side by side the cards share a height, and the buttons line up at
       // the foot; stacked, each is as tall as it needs.
@@ -1771,9 +1940,10 @@ class _Faq extends StatelessWidget {
     );
     final list = Container(
       decoration: BoxDecoration(
-        color: ink.dark ? BrandColors.slateNavy : Colors.white,
+        color: ink.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: brand.glassBorder),
+        boxShadow: ink.dark ? null : ink.shadow(light: 0.05, blur: 18, dy: 6),
       ),
       clipBehavior: Clip.antiAlias,
       child: Theme(
@@ -2097,13 +2267,16 @@ class _Eyebrow extends StatelessWidget {
   }
 }
 
-/// A round-ended button: filled with [color] (orange), or [outlined].
-class _PillButton extends StatelessWidget {
+/// A round-ended button: filled with [color] (the brand's orange unless
+/// given) in [foreground] (navy unless given), or [outlined]. It gives a
+/// little under a press, and its arrow nudges forward under the mouse.
+class _PillButton extends StatefulWidget {
   final String label;
   final VoidCallback onPressed;
   final IconData? icon;
   final bool outlined;
-  final Color color;
+  final Color? color;
+  final Color foreground;
 
   /// Smaller, for the bar.
   final bool compact;
@@ -2113,12 +2286,34 @@ class _PillButton extends StatelessWidget {
     required this.onPressed,
     this.icon,
     this.outlined = false,
-    this.color = BrandColors.orange,
+    this.color,
+    this.foreground = BrandColors.navy,
     this.compact = false,
   });
 
   @override
+  State<_PillButton> createState() => _PillButtonState();
+}
+
+class _PillButtonState extends State<_PillButton> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Pressable(child: _button(context)),
+    );
+  }
+
+  Widget _button(BuildContext context) {
+    final label = widget.label;
+    final onPressed = widget.onPressed;
+    final icon = widget.icon;
+    final outlined = widget.outlined;
+    final compact = widget.compact;
+    final color = widget.color ?? context.brand.accent;
     final ink = _Ink.of(context);
     final padding = compact
         ? const EdgeInsets.symmetric(horizontal: 18, vertical: 10)
@@ -2130,7 +2325,15 @@ class _PillButton extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
-        if (icon != null) ...[const SizedBox(width: 8), Icon(icon, size: 19)],
+        if (icon != null) ...[
+          const SizedBox(width: 8),
+          AnimatedSlide(
+            offset: Offset(_hover && !reduceMotion(context) ? 0.2 : 0, 0),
+            duration: Motion.hover,
+            curve: Motion.ease,
+            child: Icon(icon, size: 19),
+          ),
+        ],
       ],
     );
     if (outlined) {
@@ -2151,14 +2354,16 @@ class _PillButton extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
-          if (!compact) BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8)),
+          if (!compact)
+            BoxShadow(
+                color: color.withValues(alpha: ink.dark ? 0.35 : 0.26), blurRadius: ink.dark ? 20 : 16, offset: const Offset(0, 8)),
         ],
       ),
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: color,
-          foregroundColor: BrandColors.navy,
+          foregroundColor: widget.foreground,
           shape: const StadiumBorder(),
           padding: padding,
           minimumSize: minimumSize,

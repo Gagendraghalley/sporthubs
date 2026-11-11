@@ -201,22 +201,16 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                   if (shown.isEmpty)
                     const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('No packages here.')))
                   else
-                    ResponsiveGrid(
-                      minItemWidth: 320,
-                      maxColumns: 3,
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: staggered([
-                        for (final p in shown)
-                          _PackageCard(
-                            plan: p,
-                            stats: stats[p.id]!,
-                            share: activeTotal == 0 ? 0 : stats[p.id]!.activeMembers / activeTotal,
-                            best: best?.id == p.id,
-                            onEdit: () => _edit(p),
-                            onToggle: () => _toggle(p),
-                          ),
-                      ]),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 120),
+                      child: _PackagesTable(
+                        plans: shown.toList(),
+                        stats: stats,
+                        activeTotal: activeTotal,
+                        bestId: best?.id,
+                        onEdit: _edit,
+                        onToggle: _toggle,
+                      ),
                     ),
                 ],
               ),
@@ -259,152 +253,204 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   }
 }
 
-class _PackageCard extends StatelessWidget {
-  final GymPlan plan;
-  final PlanStats stats;
+/// The packages as a table: what it is, its price, members on it now, times
+/// sold, what it brought in, its share of today's members, and whether it's
+/// on sale; a row opens it to edit, and its menu hides it or puts it back on
+/// sale. On a phone the package's cell carries what the hidden columns say.
+class _PackagesTable extends StatelessWidget {
+  final List<GymPlan> plans;
+  final Map<String, PlanStats> stats;
+  final int activeTotal;
+  final String? bestId;
+  final ValueChanged<GymPlan> onEdit;
+  final ValueChanged<GymPlan> onToggle;
 
-  /// Its part of the members on a package today, 0 to 1.
-  final double share;
-  final bool best;
-  final VoidCallback onEdit;
-  final VoidCallback onToggle;
-
-  const _PackageCard({
-    required this.plan,
+  const _PackagesTable({
+    required this.plans,
     required this.stats,
-    required this.share,
-    required this.best,
+    required this.activeTotal,
+    required this.bestId,
     required this.onEdit,
     required this.onToggle,
   });
 
+  double _share(GymPlan p) => activeTotal == 0 ? 0 : stats[p.id]!.activeMembers / activeTotal;
+
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
-    final ink = ConsoleInk.of(context);
-    final color = plan.isActive ? BrandColors.orange : brand.muted;
-    return HoverLift(
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: plan.isActive ? 1 : 0.7,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: ink.card,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: best ? BrandColors.orange.withValues(alpha: 0.5) : brand.glassBorder),
-            boxShadow: ink.shadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text(plan.name, style: context.text.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  if (best) StatusChip(label: 'Best seller', color: BrandColors.orange, icon: Icons.workspace_premium_rounded),
-                  if (!plan.isActive) StatusChip(label: 'Hidden', color: brand.muted, icon: Icons.visibility_off_outlined),
-                  PopupMenuButton<String>(
-                    tooltip: 'More for ${plan.name}',
-                    onSelected: (v) => v == 'edit' ? onEdit() : onToggle(),
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.edit_outlined), title: Text('Edit')),
-                      ),
-                      PopupMenuItem(
-                        value: 'toggle',
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(plan.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                          title: Text(plan.isActive ? 'Hide (stop selling)' : 'Put on sale'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                    text: plan.price == 0 ? 'Free' : formatNu(plan.price),
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: color, letterSpacing: -0.5),
-                  ),
-                  TextSpan(text: '  / ${formatDuration(plan.durationDays)}', style: TextStyle(color: brand.muted, fontSize: 14)),
-                ]),
-              ),
-              if (plan.description != null && plan.description!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(plan.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, height: 1.4)),
-              ],
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _Fact(icon: Icons.people_alt_outlined, text: '${stats.activeMembers} now'),
-                  const SizedBox(width: 16),
-                  _Fact(icon: Icons.receipt_long_outlined, text: '${stats.sold} sold'),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      formatNu(stats.revenue),
-                      textAlign: TextAlign.end,
+    // '2 now': the number bold, the word quiet.
+    Widget count(int n, String word) => Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '$n', style: TextStyle(fontWeight: FontWeight.w800, color: brand.ink)),
+            TextSpan(text: ' $word', style: TextStyle(color: brand.muted)),
+          ]),
+          maxLines: 1,
+        );
+    String price(GymPlan p) => p.price == 0 ? 'Free' : formatNu(p.price);
+    Widget badges(GymPlan p, {required bool withStatus}) => Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            if (bestId == p.id) StatusChip(label: 'Best seller', color: brand.accent, icon: Icons.workspace_premium_rounded),
+            if (!p.isActive)
+              StatusChip(label: 'Hidden', color: brand.muted, icon: Icons.visibility_off_outlined)
+            else if (withStatus)
+              StatusChip(label: 'On sale', color: brand.success),
+          ],
+        );
+    return DataGrid<GymPlan>(
+      rows: plans,
+      noun: 'packages',
+      rowLabel: (p) => 'Edit ${p.name}',
+      dimmed: (p) => !p.isActive,
+      onRowTap: onEdit,
+      columns: [
+        GridColumn(
+          key: 'package',
+          label: 'Package',
+          flex: 4,
+          sortBy: (p) => p.name.toLowerCase(),
+          cell: (context, p) {
+            final s = stats[p.id]!;
+            final carry = [
+              if (!DataGrid.shows(context, 'price')) '${price(p)} / ${formatDuration(p.durationDays)}',
+              if (!DataGrid.shows(context, 'members')) '${s.activeMembers} now · ${s.sold} sold',
+            ];
+            final description = p.description?.trim() ?? '';
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(p.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                if (description.isNotEmpty)
+                  Text(description,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+                if (carry.isNotEmpty)
+                  Text(carry.join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.w700, color: ink.body),
-                    ),
-                  ),
-                ],
+                      style: TextStyle(color: brand.body, fontSize: 13, fontWeight: FontWeight.w600)),
+                if (!DataGrid.shows(context, 'status') && (bestId == p.id || !p.isActive))
+                  Padding(padding: const EdgeInsets.only(top: 4), child: badges(p, withStatus: false)),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'price',
+          label: 'Price',
+          flex: 3,
+          showFrom: 640,
+          sortBy: (p) => p.price,
+          cell: (context, p) => Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                text: price(p),
+                style: TextStyle(fontWeight: FontWeight.w800, color: p.isActive ? brand.ink : brand.muted),
               ),
-              ConsoleShareRow(
-                color: color,
-                label: 'Share of members today',
-                value: '${(share * 100).round()}%',
-                share: share,
+              TextSpan(text: ' / ${formatDuration(p.durationDays)}', style: TextStyle(color: brand.muted, fontSize: 13)),
+            ]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        GridColumn(
+          key: 'members',
+          label: 'Members',
+          flex: 2,
+          showFrom: 760,
+          sortBy: (p) => stats[p.id]!.activeMembers,
+          cell: (context, p) => count(stats[p.id]!.activeMembers, 'now'),
+        ),
+        GridColumn(
+          key: 'sold',
+          label: 'Sold',
+          flex: 2,
+          showFrom: 900,
+          sortBy: (p) => stats[p.id]!.sold,
+          cell: (context, p) => count(stats[p.id]!.sold, 'sold'),
+        ),
+        GridColumn(
+          key: 'sales',
+          label: 'Sales',
+          flex: 2,
+          showFrom: 1040,
+          sortBy: (p) => stats[p.id]!.revenue,
+          cell: (context, p) =>
+              Text(formatNu(stats[p.id]!.revenue), style: TextStyle(fontWeight: FontWeight.w700, color: brand.body)),
+        ),
+        GridColumn(
+          key: 'share',
+          label: 'Share today',
+          flex: 3,
+          showFrom: 1180,
+          sortBy: _share,
+          cell: (context, p) {
+            final share = _share(p);
+            final color = p.isActive ? brand.accent : brand.muted;
+            return Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: share),
+                      duration: Motion.of(context, Motion.card),
+                      curve: Motion.ease,
+                      builder: (context, v, _) => LinearProgressIndicator(
+                        value: v,
+                        minHeight: 6,
+                        color: color,
+                        backgroundColor: color.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 38,
+                  child: Text('${(share * 100).round()}%',
+                      textAlign: TextAlign.end, style: TextStyle(fontWeight: FontWeight.w700, color: brand.body)),
+                ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 156,
+          showFrom: 520,
+          sortBy: (p) => '${p.isActive ? 0 : 1}${bestId == p.id ? 0 : 1}',
+          cell: (context, p) => badges(p, withStatus: true),
+        ),
+        GridColumn(
+          key: 'more',
+          label: '',
+          width: 52,
+          alignEnd: true,
+          cell: (context, p) => PopupMenuButton<String>(
+            tooltip: 'More for ${p.name}',
+            onSelected: (v) => v == 'edit' ? onEdit(p) : onToggle(p),
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.edit_outlined), title: Text('Edit')),
               ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onEdit,
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 42)),
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Edit'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextButton(
-                      onPressed: onToggle,
-                      style: TextButton.styleFrom(minimumSize: const Size(0, 42)),
-                      child: Text(plan.isActive ? 'Hide' : 'Put on sale'),
-                    ),
-                  ),
-                ],
+              PopupMenuItem(
+                value: 'toggle',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(p.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  title: Text(p.isActive ? 'Hide (stop selling)' : 'Put on sale'),
+                ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Fact extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _Fact({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 17, color: context.brand.muted),
-        const SizedBox(width: 5),
-        Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
       ],
     );
   }
@@ -798,10 +844,7 @@ class _IncomeScreenState extends ConsumerState<IncomeScreen> {
                       ),
                     )
                   else
-                    SectionCard(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(children: [for (final p in shown) _PaymentRow(payment: p)]),
-                    ),
+                    _PaymentsTable(payments: shown),
                 ],
               ),
             );
@@ -838,28 +881,104 @@ class _Change extends StatelessWidget {
   }
 }
 
-class _PaymentRow extends StatelessWidget {
-  final Payment payment;
+/// The month's payments as a table: who paid, how, the journal number,
+/// when, and how much (the column to sort by size). On a phone the payer's
+/// cell carries how and when.
+class _PaymentsTable extends StatelessWidget {
+  final List<Payment> payments;
 
-  const _PaymentRow({required this.payment});
+  const _PaymentsTable({required this.payments});
 
   @override
   Widget build(BuildContext context) {
-    final p = payment;
-    final color = methodColor(p.method);
-    final name = (p.payerName ?? '').trim();
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.14),
-        child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: TextStyle(color: color, fontWeight: FontWeight.w800)),
-      ),
-      title: Text(name.isEmpty ? 'Member' : name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        [p.method.label, if (p.reference != null) p.reference!, formatMoment(p.createdAt)].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(formatNu(p.amount), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+    final brand = context.brand;
+    String name(Payment p) => (p.payerName ?? '').trim();
+    return DataGrid<Payment>(
+      rows: payments,
+      noun: 'payments',
+      columns: [
+        GridColumn(
+          key: 'payer',
+          label: 'Paid by',
+          flex: 4,
+          sortBy: (p) => name(p).toLowerCase(),
+          cell: (context, p) {
+            final color = methodColor(p.method);
+            final n = name(p);
+            final carry = [
+              if (!DataGrid.shows(context, 'method')) p.method.label,
+              if (!DataGrid.shows(context, 'reference') && p.reference != null) p.reference!,
+              if (!DataGrid.shows(context, 'when')) formatMoment(p.createdAt),
+            ];
+            return Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: color.withValues(alpha: 0.14),
+                  child: Text(n.isEmpty ? '?' : n[0].toUpperCase(), style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(n.isEmpty ? 'Member' : n,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+                      if (carry.isNotEmpty)
+                        Text(carry.join(' · '),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        GridColumn(
+          key: 'method',
+          label: 'Method',
+          flex: 2,
+          showFrom: 600,
+          sortBy: (p) => p.method.label,
+          cell: (context, p) => StatusChip(label: p.method.label, color: methodColor(p.method)),
+        ),
+        GridColumn(
+          key: 'reference',
+          label: 'Journal no.',
+          flex: 3,
+          showFrom: 960,
+          sortBy: (p) => p.reference ?? '',
+          cell: (context, p) => Text(
+            p.reference ?? '—',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: p.reference == null ? brand.muted : brand.body,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        GridColumn(
+          key: 'when',
+          label: 'When',
+          flex: 3,
+          showFrom: 760,
+          sortBy: (p) => p.createdAt,
+          cell: (context, p) => Text(formatMoment(p.createdAt), style: TextStyle(color: brand.body)),
+        ),
+        GridColumn(
+          key: 'amount',
+          label: 'Amount',
+          width: 132,
+          alignEnd: true,
+          sortBy: (p) => p.amount,
+          cell: (context, p) => Text(formatNu(p.amount),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: brand.ink, fontFeatures: const [FontFeature.tabularFigures()])),
+        ),
+      ],
     );
   }
 }

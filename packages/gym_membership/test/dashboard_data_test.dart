@@ -183,6 +183,27 @@ void main() {
     expect(activity[2].kind, GymActivityKind.renewed);
   });
 
+  test('income this month against the same days of last month', () {
+    final change = incomeChangeMonthToDate([
+      pay(1000, DateTime(2026, 11, 1)),
+      pay(500, today),
+      pay(9999, DateTime(2026, 11, 3), status: 'pending'), // not paid yet
+      pay(1000, DateTime(2026, 10, 2)),
+      pay(4000, DateTime(2026, 10, 8)), // after the 7th: not the same days
+      pay(700, DateTime(2026, 9, 30)), // the month before
+    ], today);
+    expect(change, closeTo(0.5, 1e-9));
+
+    // Nothing last month in those days: nothing to compare with.
+    expect(incomeChangeMonthToDate([pay(1000, DateTime(2026, 11, 1))], today), isNull);
+
+    // On the 31st, a short month counts to its own last day.
+    expect(
+      incomeChangeMonthToDate([pay(800, DateTime(2027, 3, 2)), pay(1000, DateTime(2027, 2, 28))], DateTime(2027, 3, 31)),
+      closeTo(-0.2, 1e-9),
+    );
+  });
+
   test('the greeting follows the hour in Bhutan', () {
     expect(greetingAt(DateTime(2026, 11, 7, 6)), 'Good morning');
     expect(greetingAt(DateTime(2026, 11, 7, 13)), 'Good afternoon');

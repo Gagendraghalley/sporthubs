@@ -50,6 +50,12 @@ void main() {
     expect(container.read(themeModeProvider), ThemeMode.light);
   });
 
+  testWidgets('before they choose, it is light, even on a phone set to dark', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await ThemeModeController.saved(), ThemeMode.light);
+    expect(ThemeModeController().build(), ThemeMode.light);
+  });
+
   testWidgets('the choice is kept on the device', (tester) async {
     await show(tester, ThemeMode.light);
     await tester.tap(find.byType(ThemeModeButton));

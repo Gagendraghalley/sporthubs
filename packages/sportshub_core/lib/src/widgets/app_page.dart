@@ -172,15 +172,23 @@ class ServiceActionsButton extends StatelessWidget {
         }
         return Padding(
           padding: const EdgeInsets.only(left: 8),
-          child: FilledButton.icon(
-            onPressed: toggle,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(0, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14),
+          child: Pressable(
+            child: FilledButton.icon(
+              onPressed: toggle,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                textStyle: const TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              // The plus turns a quarter while its menu is open.
+              icon: AnimatedRotation(
+                turns: controller.isOpen ? 0.125 : 0,
+                duration: Motion.of(context, Motion.dropdown),
+                curve: Motion.ease,
+                child: const Icon(Icons.add_rounded, size: 20),
+              ),
+              label: const Text('New'),
             ),
-            icon: const Icon(Icons.add_rounded, size: 20),
-            label: const Text('New'),
           ),
         );
       },

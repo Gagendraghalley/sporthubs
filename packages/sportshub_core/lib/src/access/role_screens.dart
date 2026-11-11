@@ -8,6 +8,7 @@ import '../theme/brand.dart';
 import '../venues/venue_repository.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/data_grid.dart';
 import '../widgets/feedback.dart';
 import '../widgets/form_fields.dart';
 import '../widgets/responsive.dart';
@@ -55,11 +56,7 @@ class AdminRolesScreen extends ConsumerWidget {
                       padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
                       child: FormHint('Every venue chooses its staff\'s roles from these.'),
                     ),
-                  ResponsiveGrid(
-                    minItemWidth: 360,
-                    maxColumns: 3,
-                    children: [for (final r in roles.where((r) => r.scope == scope)) _RoleTile(role: r)],
-                  ),
+                  _RolesTable(roles: [for (final r in roles) if (r.scope == scope) r]),
                 ],
               ],
             ),
@@ -70,7 +67,7 @@ class AdminRolesScreen extends ConsumerWidget {
   }
 
   Future<void> _newRole(BuildContext context) async {
-    final scope = await showDialog<String>(
+    final scope = await showAppDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('A role for'),
@@ -98,48 +95,158 @@ class AdminRolesScreen extends ConsumerWidget {
   }
 }
 
-class _RoleTile extends StatelessWidget {
-  final AppRole role;
+/// One group's roles as a table: the role, what it's for, how many
+/// permissions, built in or made here, on or off; a row opens the role.
+/// On a narrow window the role's cell carries what the hidden columns said.
+class _RolesTable extends StatelessWidget {
+  final List<AppRole> roles;
 
-  const _RoleTile({required this.role});
+  const _RolesTable({required this.roles});
+
+  static int _count(AppRole r) => r.isLocked ? 1 << 20 : r.permissions.length;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brand;
+    return DataGrid<AppRole>(
+      rows: roles,
+      noun: 'roles',
+      rowLabel: (r) => 'Open ${r.name}',
+      dimmed: (r) => !r.isActive,
+      onRowTap: (r) => context.push(CoreRoutes.adminRoleFor(r.id)),
+      columns: [
+        GridColumn(
+          key: 'role',
+          label: 'Role',
+          flex: 4,
+          sortBy: (r) => r.name.toLowerCase(),
+          cell: (context, r) => _RoleCell(role: r),
+        ),
+        GridColumn(
+          key: 'about',
+          label: "What it's for",
+          flex: 6,
+          showFrom: 820,
+          cell: (context, r) => Text(
+            r.description ?? '—',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: r.description == null ? brand.muted : brand.body, height: 1.35),
+          ),
+        ),
+        GridColumn(
+          key: 'permissions',
+          label: 'Permissions',
+          flex: 2,
+          showFrom: 560,
+          sortBy: _count,
+          cell: (context, r) => _Count(role: r),
+        ),
+        GridColumn(
+          key: 'type',
+          label: 'Type',
+          width: 120,
+          showFrom: 700,
+          sortBy: (r) => r.isSystem ? 0 : 1,
+          cell: (context, r) => r.isSystem
+              ? StatusChip(label: 'Built in', color: context.colors.tertiary)
+              : StatusChip(label: 'Custom', color: brand.muted),
+        ),
+        GridColumn(
+          key: 'status',
+          label: 'Status',
+          width: 104,
+          showFrom: 480,
+          sortBy: (r) => r.isActive ? 0 : 1,
+          cell: (context, r) => r.isActive
+              ? StatusChip(label: 'Active', color: brand.success)
+              : StatusChip(label: 'Off', color: brand.danger),
+        ),
+        GridColumn(
+          key: 'open',
+          label: '',
+          width: 40,
+          alignEnd: true,
+          cell: (context, r) => Icon(Icons.chevron_right_rounded, color: brand.muted),
+        ),
+      ],
+    );
+  }
+}
+
+/// '5 permissions', the number bold; 'Every permission' for one that has all.
+class _Count extends StatelessWidget {
+  final AppRole role;
+
+  const _Count({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    if (role.isLocked) {
+      return Text('Every permission', style: TextStyle(fontWeight: FontWeight.w600, color: brand.ink));
+    }
+    final n = role.permissions.length;
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(text: '$n', style: TextStyle(fontWeight: FontWeight.w800, color: brand.ink)),
+        TextSpan(text: n == 1 ? ' permission' : ' permissions', style: TextStyle(color: brand.muted)),
+      ]),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// The role's icon and name; what the hidden columns would say, under it.
+class _RoleCell extends StatelessWidget {
+  final AppRole role;
+
+  const _RoleCell({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    final color = role.isActive ? context.colors.primary : brand.muted;
     final count = role.isLocked
         ? 'Every permission'
         : '${role.permissions.length} permission${role.permissions.length == 1 ? '' : 's'}';
-    return SectionCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      onTap: () => context.push(CoreRoutes.adminRoleFor(role.id)),
-      child: Row(
-        children: [
-          Icon(
-            role.isPlatform ? Icons.admin_panel_settings_outlined : Icons.badge_outlined,
-            color: role.isActive ? context.colors.primary : context.brand.muted,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(role.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text(
-                  [count, if (role.description != null) role.description!].join(' · '),
-                  style: TextStyle(color: context.brand.muted),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+    final carry = [
+      if (!DataGrid.shows(context, 'permissions')) count,
+      if (!DataGrid.shows(context, 'about') && role.description != null) role.description!,
+    ];
+    final badges = [
+      if (!DataGrid.shows(context, 'type') && role.isSystem) StatusChip(label: 'Built in', color: context.colors.tertiary),
+      if (!DataGrid.shows(context, 'status') && !role.isActive) StatusChip(label: 'Off', color: brand.danger),
+    ];
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(11)),
+          child: Icon(role.isPlatform ? Icons.admin_panel_settings_outlined : Icons.badge_outlined, color: color, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(role.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: brand.ink)),
+              if (carry.isNotEmpty)
+                Text(carry.join(' · '),
+                    maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: brand.muted, fontSize: 13)),
+              if (badges.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(spacing: 6, runSpacing: 4, children: badges),
                 ),
-              ],
-            ),
+            ],
           ),
-          if (role.isSystem) ...[
-            const SizedBox(width: 6),
-            StatusChip(label: 'Built in', color: context.colors.tertiary)
-          ],
-          if (!role.isActive) ...[const SizedBox(width: 6), StatusChip(label: 'Off', color: context.brand.danger)],
-          const Icon(Icons.chevron_right_rounded),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

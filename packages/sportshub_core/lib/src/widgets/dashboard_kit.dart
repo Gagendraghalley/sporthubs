@@ -10,28 +10,75 @@ import 'motion.dart';
 // that draws itself in, a ring, tiles of shortcuts and a footer. Light and
 // dark.
 
-/// Text, card and shadow colours, light or dark.
+/// Text, card and shadow colours, light or dark; mixed while the theme
+/// switches, so cards glide from white to navy rather than flash.
 class ConsoleInk {
-  final bool dark;
+  /// 0 light, 1 dark ([Brand.darkness]).
+  final double t;
+  final List<BoxShadow> shadow;
 
-  const ConsoleInk(this.dark);
+  const ConsoleInk._(this.t, this.shadow);
 
-  factory ConsoleInk.of(BuildContext context) => ConsoleInk(Theme.of(context).brightness == Brightness.dark);
+  factory ConsoleInk.of(BuildContext context) {
+    final brand = context.brand;
+    return ConsoleInk._(brand.darkness, brand.cardShadow);
+  }
 
-  Color get heading => dark ? Colors.white : BrandColors.navy;
-  Color get body => dark ? const Color(0xFFC5CCDA) : const Color(0xFF3A4560);
-  Color get card => dark ? BrandColors.slateNavy : Colors.white;
+  bool get dark => t >= 0.5;
 
-  /// Behind tiles and icons: a pale blue, or a faint white in the dark.
-  Color get tint => dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF1F5FB);
+  Color _pick(Color light, Color dark) => Color.lerp(light, dark, t)!;
 
-  List<BoxShadow> get shadow => [
-        BoxShadow(
-          color: (dark ? Colors.black : BrandColors.navy).withValues(alpha: dark ? 0.25 : 0.06),
-          blurRadius: 24,
-          offset: const Offset(0, 8),
-        ),
-      ];
+  Color get heading => _pick(LightColors.ink, Colors.white);
+  Color get body => _pick(LightColors.body, const Color(0xFFC5CCDA));
+  Color get card => _pick(LightColors.card, BrandColors.slateNavy);
+
+  /// Behind tiles and icons: the page's cool grey, or a faint white in the
+  /// dark.
+  Color get tint => _pick(LightColors.background, Colors.white.withValues(alpha: 0.06));
+}
+
+/// How a number moved against the period before, beside it: up in green,
+/// down in red, level in grey. Only from real figures on both sides.
+class ConsoleTrend extends StatelessWidget {
+  final String text;
+
+  /// Up (good), down, or neither.
+  final bool? up;
+  final String? tooltip;
+
+  const ConsoleTrend({super.key, required this.text, this.up, this.tooltip});
+
+  /// [change] as a share (0.12 is 12% up).
+  factory ConsoleTrend.percent(double change, {String? tooltip}) {
+    final pct = (change * 100).round();
+    return ConsoleTrend(text: '${pct.abs()}%', up: pct == 0 ? null : pct > 0, tooltip: tooltip);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    final color = switch (up) { true => brand.success, false => brand.danger, null => brand.muted };
+    final chip = Container(
+      padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            switch (up) { true => Icons.trending_up_rounded, false => Icons.trending_down_rounded, null => Icons.trending_flat_rounded },
+            size: 15,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(text, style: TextStyle(color: brand.readable(color), fontSize: 12, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+    return PopIn(
+      delay: const Duration(milliseconds: 500),
+      child: tooltip == null ? chip : Tooltip(message: tooltip!, child: chip),
+    );
+  }
 }
 
 /// [children] in [columns] equal columns.
@@ -85,7 +132,7 @@ class ConsoleCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: BrandColors.orange),
+              Icon(icon, size: 20, color: context.brand.accent),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -185,10 +232,11 @@ class ConsoleKpi extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final narrow = constraints.maxWidth < 200;
+                // A paler well in the light, so the icon carries the colour.
                 final badge = Container(
                   width: narrow ? 42 : 52,
                   height: narrow ? 42 : 52,
-                  decoration: BoxDecoration(color: color.withValues(alpha: 0.13), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: color.withValues(alpha: ink.dark ? 0.13 : 0.1), shape: BoxShape.circle),
                   child: Icon(icon, color: color, size: narrow ? 21 : 25),
                 );
                 // The trend shrinks, rather than spill, where there's little
@@ -367,48 +415,82 @@ class ConsoleRangePicker<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
+    final accent = context.brand.accent;
+    const style = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, fontFamily: brandFont);
+    // Every period the width of the widest, so the orange pill can slide
+    // from one to the next.
+    final scale = MediaQuery.textScalerOf(context);
+    var widest = 0.0;
+    var tallest = 0.0;
+    for (final r in values) {
+      final t = TextPainter(text: TextSpan(text: label(r), style: style), textDirection: TextDirection.ltr, textScaler: scale)
+        ..layout();
+      if (t.width > widest) widest = t.width;
+      if (t.height > tallest) tallest = t.height;
+    }
+    final cell = (widest + 22).ceilToDouble();
+    final at = values.indexOf(value);
+    final duration = Motion.of(context, Motion.dropdown);
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: ink.dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFEFF3F9),
+        color: ink.dark ? Colors.white.withValues(alpha: 0.06) : context.brand.surfaceAlt,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final r in values)
-            Semantics(
-              selected: r == value,
-              button: true,
-              child: InkWell(
-                onTap: () => onChanged(r),
-                borderRadius: BorderRadius.circular(16),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      child: SizedBox(
+        width: cell * values.length,
+        height: (tallest + 12).ceilToDouble(),
+        child: Stack(
+          children: [
+            if (at >= 0)
+              AnimatedPositioned(
+                duration: duration,
+                curve: Motion.ease,
+                left: cell * at,
+                top: 0,
+                bottom: 0,
+                width: cell,
+                child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: r == value ? BrandColors.orange : Colors.transparent,
+                    color: accent,
                     borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    label(r),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: r == value ? Colors.white : ink.body,
-                    ),
+                    boxShadow: ink.dark ? null : [BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))],
                   ),
                 ),
               ),
+            Row(
+              children: [
+                for (final r in values)
+                  Semantics(
+                    selected: r == value,
+                    button: true,
+                    child: InkWell(
+                      onTap: () => onChanged(r),
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        width: cell,
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: duration,
+                            style: style.copyWith(color: r == value ? Colors.white : ink.body),
+                            child: Text(label(r), maxLines: 1),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// A smooth orange line over a soft fill, the best point labelled.
-class ConsoleLineChart extends StatelessWidget {
+/// A smooth orange line over a soft fill, the best point labelled; under
+/// the mouse, the nearest point's label and value instead, on a guide line.
+class ConsoleLineChart extends StatefulWidget {
   final List<({String label, int value})> points;
 
   /// The best point's label: 'Nu. 52,000', '3 visits'.
@@ -431,34 +513,67 @@ class ConsoleLineChart extends StatelessWidget {
   });
 
   @override
+  State<ConsoleLineChart> createState() => _ConsoleLineChartState();
+}
+
+class _ConsoleLineChartState extends State<ConsoleLineChart> {
+  /// The point under the mouse.
+  int? _focus;
+
+  void _hover(Offset at, double width) {
+    final n = widget.points.length;
+    if (n == 0) return;
+    final dx = n == 1 ? 0.0 : (width - _LinePainter.right - _LinePainter.left) / (n - 1);
+    final i = dx == 0 ? 0 : ((at.dx - _LinePainter.left) / dx).round().clamp(0, n - 1);
+    if (i != _focus) setState(() => _focus = i);
+  }
+
+  @override
+  void didUpdateWidget(ConsoleLineChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_focus != null && _focus! >= widget.points.length) _focus = null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ink = ConsoleInk.of(context);
+    final points = widget.points;
+    final format = widget.format;
     final best = points.fold<({String label, int value})?>(null, (b, p) => b == null || p.value > b.value ? p : b);
     CustomPainter paint(double progress) => _LinePainter(
           points: points,
           format: format,
-          whole: whole,
+          whole: widget.whole,
           progress: progress,
+          focus: progress >= 1 ? _focus : null,
           label: TextStyle(fontSize: 11.5, color: context.brand.muted, fontFamily: brandFont),
           bubble: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink.heading, fontFamily: brandFont),
           bubbleColor: ink.card,
           grid: context.brand.glassBorder,
-          line: BrandColors.orange,
+          guide: context.brand.muted.withValues(alpha: 0.45),
+          line: context.brand.accent,
         );
     return Semantics(
       label: best == null || best.value == 0
-          ? '$name: $noneText'
-          : '$name: highest ${format(best.value)} on ${best.label}',
-      // The line draws itself in, left to right, each time the figures change.
-      child: reduceMotion(context)
-          ? CustomPaint(size: Size.infinite, painter: paint(1))
-          : TweenAnimationBuilder<double>(
-              key: ValueKey(Object.hashAll(points.map((p) => Object.hash(p.label, p.value)))),
-              tween: Tween(begin: 0, end: 1),
-              duration: const Duration(milliseconds: 900),
-              curve: Curves.easeOutCubic,
-              builder: (context, t, _) => CustomPaint(size: Size.infinite, painter: paint(t)),
-            ),
+          ? '${widget.name}: ${widget.noneText}'
+          : '${widget.name}: highest ${format(best.value)} on ${best.label}',
+      child: LayoutBuilder(
+        builder: (context, box) => MouseRegion(
+          onHover: (e) => _hover(e.localPosition, box.maxWidth),
+          onExit: (_) => setState(() => _focus = null),
+          // The line draws itself in, left to right, each time the figures
+          // change.
+          child: reduceMotion(context)
+              ? CustomPaint(size: Size.infinite, painter: paint(1))
+              : TweenAnimationBuilder<double>(
+                  key: ValueKey(Object.hashAll(points.map((p) => Object.hash(p.label, p.value)))),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: Motion.chart,
+                  curve: Motion.ease,
+                  builder: (context, t, _) => CustomPaint(size: Size.infinite, painter: paint(t)),
+                ),
+        ),
+      ),
     );
   }
 }
@@ -483,16 +598,24 @@ double niceStep(double rough) {
 }
 
 class _LinePainter extends CustomPainter {
+  /// Room at the left for the amounts, and at the right.
+  static const left = 44.0;
+  static const right = 10.0;
+
   final List<({String label, int value})> points;
   final String Function(int) format;
   final bool whole;
 
   /// How far it has drawn in, 0 to 1.
   final double progress;
+
+  /// The point under the mouse: labelled, on a guide line.
+  final int? focus;
   final TextStyle label;
   final TextStyle bubble;
   final Color bubbleColor;
   final Color grid;
+  final Color guide;
   final Color line;
 
   _LinePainter({
@@ -500,10 +623,12 @@ class _LinePainter extends CustomPainter {
     required this.format,
     required this.whole,
     this.progress = 1,
+    this.focus,
     required this.label,
     required this.bubble,
     required this.bubbleColor,
     required this.grid,
+    required this.guide,
     required this.line,
   });
 
@@ -513,7 +638,7 @@ class _LinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty || size.width < 80 || size.height < 60) return;
-    final chart = Rect.fromLTRB(44, 34, size.width - 10, size.height - 26);
+    final chart = Rect.fromLTRB(left, 34, size.width - right, size.height - 26);
     final most = points.fold<int>(0, (m, p) => math.max(m, p.value));
     // Four gridlines in round steps; a few whole things (visits) get a line
     // each and one spare, so a single visit doesn't sit low on an empty chart.
@@ -571,6 +696,17 @@ class _LinePainter extends CustomPainter {
         ).createShader(chart),
     );
     canvas.restore();
+    // The guide down from the point under the mouse.
+    final focused = focus != null && focus! < n ? focus : null;
+    if (focused != null) {
+      final x = at[focused].dx;
+      final dash = Paint()
+        ..color = guide
+        ..strokeWidth = 1;
+      for (var y = chart.top; y < chart.bottom; y += 6) {
+        canvas.drawLine(Offset(x, y), Offset(x, math.min(y + 3, chart.bottom)), dash);
+      }
+    }
     canvas.drawPath(
       path,
       Paint()
@@ -580,34 +716,48 @@ class _LinePainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
-    if (n <= 13) {
-      for (final o in at) {
+    if (n <= 13 || focused != null) {
+      for (var i = 0; i < n; i++) {
+        final o = at[i];
         if (o.dx > drawnTo + 0.5) continue;
-        canvas.drawCircle(o, 5, Paint()..color = bubbleColor);
+        if (n > 13 && i != focused) continue;
+        final r = i == focused ? 6.5 : 5.0;
+        canvas.drawCircle(o, r, Paint()..color = i == focused ? line : bubbleColor);
         canvas.drawCircle(
           o,
-          5,
+          r,
           Paint()
-            ..color = line
+            ..color = i == focused ? bubbleColor : line
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2.5,
         );
       }
     }
 
-    // The best point, labelled above itself.
+    // The point under the mouse, or else the best, labelled above itself.
     var best = 0;
     for (var i = 1; i < n; i++) {
       if (points[i].value > points[best].value) best = i;
     }
-    if (points[best].value > 0 && at[best].dx <= drawnTo + 0.5) {
-      final t = _text(format(points[best].value), bubble);
+    final labelled = focused ?? best;
+    if ((focused != null || points[best].value > 0) && at[labelled].dx <= drawnTo + 0.5) {
+      final text = focused == null
+          ? format(points[labelled].value)
+          : '${points[labelled].label} · ${format(points[labelled].value)}';
+      final t = _text(text, bubble);
       final w = t.width + 18;
       final h = t.height + 10;
-      final left = (at[best].dx - w / 2).clamp(chart.left, chart.right - w).toDouble();
-      final box = RRect.fromRectAndRadius(Rect.fromLTWH(left, at[best].dy - h - 12, w, h), const Radius.circular(9));
+      final boxLeft = (at[labelled].dx - w / 2).clamp(0.0, size.width - w).toDouble();
+      final boxTop = math.max(0.0, at[labelled].dy - h - 12);
+      final box = RRect.fromRectAndRadius(Rect.fromLTWH(boxLeft, boxTop, w, h), const Radius.circular(9));
       canvas.drawShadow(Path()..addRRect(box), Colors.black, 4, false);
       canvas.drawRRect(box, Paint()..color = bubbleColor);
+      canvas.drawRRect(
+        box,
+        Paint()
+          ..color = grid
+          ..style = PaintingStyle.stroke,
+      );
       t.paint(canvas, Offset(box.left + 9, box.top + 5));
     }
 
@@ -624,9 +774,13 @@ class _LinePainter extends CustomPainter {
   bool shouldRepaint(_LinePainter old) =>
       old.points != points ||
       old.progress != progress ||
+      old.focus != focus ||
       old.whole != whole ||
       old.line != line ||
       old.grid != grid ||
+      old.guide != guide ||
+      old.label != label ||
+      old.bubble != bubble ||
       old.bubbleColor != bubbleColor;
 }
 
@@ -634,7 +788,7 @@ class _LinePainter extends CustomPainter {
 /// tallest) in [color] with its value over it, the rest paler. A tooltip on
 /// each; tapping one calls [onTap]. Labels under them, every few when
 /// they'd crowd.
-class ConsoleBarChart extends StatelessWidget {
+class ConsoleBarChart extends StatefulWidget {
   final List<({String label, num value})> points;
   final String Function(num) format;
   final Color color;
@@ -657,11 +811,25 @@ class ConsoleBarChart extends StatelessWidget {
   });
 
   @override
+  State<ConsoleBarChart> createState() => _ConsoleBarChartState();
+}
+
+class _ConsoleBarChartState extends State<ConsoleBarChart> {
+  /// The bar under the mouse: deeper, with its value over it.
+  int? _hover;
+
+  @override
   Widget build(BuildContext context) {
+    final points = widget.points;
+    final format = widget.format;
+    final color = widget.color;
+    final onTap = widget.onTap;
+    final name = widget.name;
     final most = points.fold<num>(0, (m, p) => math.max(m, p.value));
-    final marked = highlight ?? (most == 0 ? null : points.indexWhere((p) => p.value == most));
+    final marked = widget.highlight ?? (most == 0 ? null : points.indexWhere((p) => p.value == most));
     final muted = context.brand.muted;
     final ink = ConsoleInk.of(context);
+    final hover = _hover != null && _hover! < points.length ? _hover : null;
 
     Widget bars(double t) => LayoutBuilder(
           builder: (context, c) {
@@ -676,17 +844,20 @@ class ConsoleBarChart extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: gap / 2),
-                      child: Tooltip(
+                      child: MouseRegion(
+                        onEnter: (_) => setState(() => _hover = i),
+                        onExit: (_) => setState(() => _hover = _hover == i ? null : _hover),
+                        child: Tooltip(
                         message: '${points[i].label}: ${format(points[i].value)}',
                         child: InkWell(
-                          onTap: onTap == null ? null : () => onTap!(i),
+                          onTap: onTap == null ? null : () => onTap(i),
                           borderRadius: BorderRadius.circular(6),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               SizedBox(
                                 height: 20,
-                                child: i == marked && points[i].value > 0
+                                child: (i == hover || (hover == null && i == marked)) && points[i].value > 0
                                     ? FittedBox(
                                         fit: BoxFit.scaleDown,
                                         child: Opacity(
@@ -697,17 +868,27 @@ class ConsoleBarChart extends StatelessWidget {
                                       )
                                     : null,
                               ),
-                              Container(
-                                height: most == 0 ? 2 : math.max(points[i].value > 0 ? 3.0 : 2.0, area * points[i].value / most * t),
-                                decoration: BoxDecoration(
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(6), bottom: Radius.circular(2)),
-                                  gradient: i == marked
-                                      ? LinearGradient(
-                                          colors: [color, color.withValues(alpha: 0.75)],
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter)
-                                      : null,
-                                  color: i == marked ? null : color.withValues(alpha: points[i].value == 0 ? 0.12 : 0.28),
+                              // Lighter bars deepen under the mouse, over a
+                              // hover's length.
+                              TweenAnimationBuilder<double>(
+                                tween: Tween(end: i == hover ? 1 : 0),
+                                duration: Motion.of(context, Motion.hover),
+                                curve: Motion.ease,
+                                builder: (context, h, _) => Container(
+                                  height:
+                                      most == 0 ? 2 : math.max(points[i].value > 0 ? 3.0 : 2.0, area * points[i].value / most * t),
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(6), bottom: Radius.circular(2)),
+                                    gradient: i == marked
+                                        ? LinearGradient(
+                                            colors: [color, color.withValues(alpha: 0.75 + 0.25 * h)],
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter)
+                                        : null,
+                                    color: i == marked
+                                        ? null
+                                        : color.withValues(alpha: (points[i].value == 0 ? 0.12 : 0.28) + 0.3 * h),
+                                  ),
                                 ),
                               ),
                               SizedBox(
@@ -727,6 +908,7 @@ class ConsoleBarChart extends StatelessWidget {
                           ),
                         ),
                       ),
+                      ),
                     ),
                   ),
               ],
@@ -737,14 +919,14 @@ class ConsoleBarChart extends StatelessWidget {
     return Semantics(
       label: marked == null ? '$name: none yet' : '$name: highest ${format(points[marked].value)}, ${points[marked].label}',
       child: SizedBox(
-        height: height,
+        height: widget.height,
         child: reduceMotion(context)
             ? bars(1)
             : TweenAnimationBuilder<double>(
                 key: ValueKey(Object.hashAll(points.map((p) => Object.hash(p.label, p.value)))),
                 tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.easeOutCubic,
+                duration: Motion.chart,
+                curve: Motion.ease,
                 builder: (context, t, _) => bars(t),
               ),
       ),
@@ -910,7 +1092,7 @@ class ConsoleActionTile extends StatelessWidget {
                 Badge(
                   isLabelVisible: badge > 0,
                   label: Text('$badge'),
-                  backgroundColor: BrandColors.orange,
+                  backgroundColor: context.brand.accent,
                   child: Icon(icon, color: ink.heading, size: 24),
                 ),
                 const SizedBox(height: 8),
@@ -971,12 +1153,16 @@ class ConsoleGlowButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    final accent = context.brand.accent;
+    final dark = ConsoleInk.of(context).dark;
+    return Pressable(
+      child: DecoratedBox(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFF8A3D), BrandColors.orange]),
+        gradient: LinearGradient(colors: [const Color(0xFFFF8A3D), accent]),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
-          BoxShadow(color: BrandColors.orange.withValues(alpha: 0.32), blurRadius: 16, offset: const Offset(0, 6))
+          BoxShadow(
+              color: accent.withValues(alpha: dark ? 0.32 : 0.24), blurRadius: dark ? 16 : 12, offset: Offset(0, dark ? 6 : 4))
         ],
       ),
       child: Material(
@@ -1004,6 +1190,7 @@ class ConsoleGlowButton extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -1018,10 +1205,11 @@ class ConsolePillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
+    return Pressable(
+      child: FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: BrandColors.orange,
+        backgroundColor: context.brand.accent,
         foregroundColor: Colors.white,
         shape: const StadiumBorder(),
         minimumSize: Size(0, small ? 36 : 44),
@@ -1035,6 +1223,7 @@ class ConsolePillButton extends StatelessWidget {
           const SizedBox(width: 6),
           Icon(Icons.arrow_forward_rounded, size: small ? 16 : 18),
         ],
+      ),
       ),
     );
   }

@@ -150,6 +150,16 @@ class _AppearanceCard extends ConsumerWidget {
               onSelectionChanged: (s) => ref.read(themeModeProvider.notifier).set(s.first),
             ),
           ),
+          const SizedBox(height: 6),
+          // On top of the device's own setting, which always counts.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: ref.watch(reduceMotionProvider),
+            onChanged: (v) => ref.read(reduceMotionProvider.notifier).set(v),
+            title: const Text('Reduce motion', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text('Keep pages and numbers still: no entrances, count-ups or floating cards',
+                style: TextStyle(color: context.brand.muted, fontSize: 13)),
+          ),
         ],
       ),
     );

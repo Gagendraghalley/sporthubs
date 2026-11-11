@@ -128,7 +128,8 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// A small coloured label: 'Active', 'Pending', 'Verified'.
+/// A small coloured label: 'Active', 'Pending', 'Verified'. A change of
+/// status cross-fades: the colour glides, the words swap.
 class StatusChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -138,15 +139,37 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final brand = context.brand;
+    final light = brand.isLight;
+    final duration = Motion.of(context, Motion.dropdown);
+    // In the light, a paler wash with a hairline of the colour, and the words
+    // a shade deeper so amber and green read on white.
+    final text = brand.readable(color);
+    return AnimatedContainer(
+      duration: duration,
+      curve: Motion.ease,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5)),
-        ],
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: light ? 0.1 : 0.14),
+        borderRadius: BorderRadius.circular(20),
+        border: light ? Border.all(color: color.withValues(alpha: 0.22)) : null,
+      ),
+      child: AnimatedSwitcher(
+        duration: duration,
+        child: Row(
+          key: ValueKey(label),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
+            // Shortened, never spilling, where a cell is narrow.
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: text, fontWeight: FontWeight.w700, fontSize: 12.5)),
+            ),
+          ],
+        ),
       ),
     );
   }

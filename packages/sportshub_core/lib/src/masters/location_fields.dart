@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../widgets/searchable_dropdown.dart';
 import 'location.dart';
 import 'master_repository.dart';
 
@@ -107,10 +108,8 @@ class _LocationDropdown extends StatelessWidget {
     final list = items?.valueOrNull ?? const <LocationItem>[];
     final loading = items?.isLoading ?? false;
     final failed = items?.hasError ?? false;
-    return DropdownButtonFormField<int>(
-      initialValue: list.any((i) => i.id == value) ? value : null,
-      isExpanded: true,
-      menuMaxHeight: 420,
+    return SearchableDropdown<int>(
+      value: list.any((i) => i.id == value) ? value : null,
       decoration: InputDecoration(
         labelText: label,
         helperText: failed ? 'Could not load the list. Pull to refresh or try again.' : null,
@@ -121,10 +120,8 @@ class _LocationDropdown extends StatelessWidget {
               )
             : null,
       ),
-      hint: hint == null ? null : Text(hint!),
-      items: [
-        for (final i in list) DropdownMenuItem(value: i.id, child: Text(i.name, overflow: TextOverflow.ellipsis))
-      ],
+      hint: hint,
+      options: [for (final i in list) DropdownOption(i.id, i.name)],
       onChanged: items == null || list.isEmpty ? null : onChanged,
       validator: validator,
     );

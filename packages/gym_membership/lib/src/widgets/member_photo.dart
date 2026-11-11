@@ -92,7 +92,7 @@ class MemberPhotoField extends StatelessWidget {
 /// camera elsewhere. Null when they cancel.
 Future<PickedPhoto?> takeMemberPhoto(BuildContext context) async {
   if (!kIsWeb) return pickPhoto(context, camera: true);
-  return showDialog<PickedPhoto>(context: context, barrierDismissible: false, builder: (_) => const WebcamDialog());
+  return showAppDialog<PickedPhoto>(context: context, barrierDismissible: false, builder: (_) => const WebcamDialog());
 }
 
 /// The computer's webcam, live: snap, look, retake or use.

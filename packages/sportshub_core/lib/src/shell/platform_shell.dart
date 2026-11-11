@@ -115,7 +115,8 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
             child: AppShellScope(
               openMenu: beside ? null : () => _scaffold.currentState?.openDrawer(),
               service: active,
-              child: FadeSlideIn(key: ValueKey(location), offset: 24, child: widget.child),
+              // Each page fades up into place: quick enough not to wait for.
+              child: FadeSlideIn(key: ValueKey(location), offset: 14, duration: Motion.page, child: widget.child),
             ),
           ),
         ],
@@ -161,8 +162,66 @@ ServiceNav? adminNav(PlatformAccess access, {int pending = 0}) {
   );
 }
 
+/// The side menu's colours: white with a hairline edge in the light theme,
+/// deep navy in the dark; mixed while the theme switches, so the menu
+/// glides with the page.
+class SideInk {
+  /// 0 light, 1 dark ([Brand.darkness]).
+  final double t;
+
+  const SideInk(this.t);
+
+  factory SideInk.of(BuildContext context) => SideInk(context.brand.darkness);
+
+  bool get dark => t >= 0.5;
+
+  Color _pick(Color light, Color dark) => Color.lerp(light, dark, t)!;
+  Color _white(Color light, double alpha) => _pick(light, Colors.white.withValues(alpha: alpha));
+
+  /// The menu behind everything, top to bottom; its edge against the page.
+  List<Color> get background =>
+      [_pick(LightColors.card, BrandColors.slateNavy), _pick(LightColors.card, BrandColors.navy)];
+  Color? get edge => t >= 1 ? null : _pick(LightColors.border, BrandColors.navy);
+
+  /// A service's name, the page that's open, what's being worked on.
+  Color get strong => _pick(LightColors.ink, Colors.white);
+
+  /// A page's name, and under the mouse.
+  Color get label => _white(const Color(0xFF475569), 0.72);
+  Color get labelHover => _white(LightColors.ink, 0.92);
+
+  /// Taglines, details, the company line.
+  Color get quiet => _white(LightColors.muted, 0.5);
+
+  /// Group headings ('SERVICES') and a service's own headings.
+  Color get heading => _white(const Color(0xFF7D8A9E), 0.42);
+
+  /// Small icons at a line's end (a chevron, opens elsewhere).
+  Color get faint => _white(const Color(0xFF94A3B8), 0.6);
+
+  /// Behind a line under the mouse, and the open page's (in its [accent]).
+  Color get hover => _white(const Color(0xFFF3F6FA), 0.05);
+  Color selected(Color accent) => _white(accent.withValues(alpha: 0.09), 0.1);
+
+  /// Behind a service's header when it's open, and under the mouse.
+  Color get sectionOpen => _white(LightColors.background, 0.06);
+  Color get sectionHover => _white(const Color(0xFFF8FAFC), 0.04);
+
+  /// The switcher's well, the find box and the fold button.
+  Color get well => _white(LightColors.card, 0.05);
+  Color get wellEdge => _white(LightColors.border, 0.08);
+  Color get field => _white(LightColors.background, 0.06);
+  Color get button => _white(LightColors.background, 0.08);
+  Color get buttonIcon => _white(LightColors.muted, 0.85);
+
+  /// Rules between groups.
+  Color get rule => _white(LightColors.border, 0.08);
+  Color get foldedRule => _white(LightColors.border, 0.12);
+}
+
 /// The menu itself: the logo, the platform's pages, each service's section,
-/// Administration, and the company (Innovates). Navy in both themes.
+/// Administration, and the company (Innovates). Navy in the dark theme,
+/// white in the light ([SideInk]).
 class PlatformSidebar extends ConsumerStatefulWidget {
   final String location;
   final List<ServiceNav> services;
@@ -232,13 +291,15 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
           onExternal: _external,
         );
 
+    final ink = SideInk.of(context);
     return DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [BrandColors.slateNavy, BrandColors.navy],
+          colors: ink.background,
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
+        border: ink.edge == null || widget.inDrawer ? null : Border(right: BorderSide(color: ink.edge!)),
       ),
       child: SafeArea(
         right: false,
@@ -247,7 +308,7 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
             // Folded, or folding: icons only, their names as tooltips.
             final folded = constraints.maxWidth < 200;
             final fold = widget.onFold == null ? null : _FoldButton(folded: folded, onPressed: widget.onFold!);
-            final logo = SportsHubLogo(height: folded ? 28 : 54, markOnly: folded, onDark: true);
+            final logo = SportsHubLogo(height: folded ? 28 : 54, markOnly: folded, onDark: ink.dark);
             return _Folded(
               folded: folded,
               child: Padding(
@@ -298,8 +359,7 @@ class _PlatformSidebarState extends ConsumerState<PlatformSidebar> {
                             if (services.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-                                child: Text('No service called "$_find"',
-                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5)),
+                                child: Text('No service called "$_find"', style: TextStyle(color: ink.quiet, fontSize: 12.5)),
                               ),
                           ],
                           if (widget.admin != null) ...[
@@ -339,12 +399,13 @@ class _FoldButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = SideInk.of(context);
     return IconButton(
       tooltip: folded ? 'Expand menu' : 'Collapse menu',
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: Colors.white.withValues(alpha: 0.08),
-        foregroundColor: Colors.white.withValues(alpha: 0.85),
+        backgroundColor: ink.button,
+        foregroundColor: ink.buttonIcon,
         minimumSize: const Size(36, 36),
         fixedSize: const Size(36, 36),
         padding: EdgeInsets.zero,
@@ -368,14 +429,14 @@ class SideNavHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = SideInk.of(context);
     if (PlatformSidebar.isFolded(context)) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.12)),
+        child: Divider(height: 1, color: ink.foldedRule),
       );
     }
-    final style = TextStyle(
-        color: Colors.white.withValues(alpha: 0.42), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.4);
+    final style = TextStyle(color: ink.heading, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.4);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 18, 12, 8),
       child: Row(
@@ -396,24 +457,29 @@ class _FindService extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = SideInk.of(context);
+    final dark = ink.dark;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(
         onChanged: onChanged,
-        style: const TextStyle(color: Colors.white, fontSize: 13.5),
-        cursorColor: Colors.white,
+        style: TextStyle(color: ink.strong, fontSize: 13.5),
+        cursorColor: dark ? Colors.white : context.brand.accent,
         decoration: InputDecoration(
           isDense: true,
           hintText: 'Find a service',
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
-          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Colors.white.withValues(alpha: 0.55)),
+          hintStyle: TextStyle(color: dark ? Colors.white.withValues(alpha: 0.45) : ink.faint),
+          prefixIcon: Icon(Icons.search_rounded, size: 18, color: dark ? Colors.white.withValues(alpha: 0.55) : ink.faint),
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.06),
+          fillColor: ink.field,
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: dark ? BorderSide.none : BorderSide(color: ink.wellEdge)),
           focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: dark ? Colors.white.withValues(alpha: 0.3) : context.brand.accent)),
         ),
       ),
     );
@@ -457,17 +523,19 @@ class _SideNavTileState extends State<SideNavTile> {
 
   @override
   Widget build(BuildContext context) {
+    final ink = SideInk.of(context);
     final folded = PlatformSidebar.isFolded(context);
     final selected = widget.selected;
-    final text = selected ? Colors.white : Colors.white.withValues(alpha: _hover ? 0.92 : 0.72);
+    final text = selected ? ink.strong : (_hover ? ink.labelHover : ink.label);
     final iconColor = selected ? widget.accent : text;
+    final badgeColor = context.brand.accent;
     final badge = widget.badge;
     final Widget content;
     if (folded) {
       content = Center(
         child: Badge(
           isLabelVisible: badge > 0,
-          backgroundColor: BrandColors.orange,
+          backgroundColor: badgeColor,
           smallSize: 8,
           child: Icon(widget.icon, size: 21, color: iconColor),
         ),
@@ -475,7 +543,13 @@ class _SideNavTileState extends State<SideNavTile> {
     } else {
       content = Row(
         children: [
-          Icon(widget.icon, size: widget.nested ? 19 : 21, color: iconColor),
+          // The icon leans in a touch under the mouse.
+          AnimatedScale(
+            scale: _hover && !selected && !reduceMotion(context) ? 1.1 : 1,
+            duration: Motion.hover,
+            curve: Motion.ease,
+            child: Icon(widget.icon, size: widget.nested ? 19 : 21, color: iconColor),
+          ),
           SizedBox(width: widget.nested ? 12 : 14),
           Expanded(
             child: Text(
@@ -489,11 +563,12 @@ class _SideNavTileState extends State<SideNavTile> {
               ),
             ),
           ),
-          if (widget.external) Icon(Icons.open_in_new_rounded, size: 14, color: Colors.white.withValues(alpha: 0.45)),
+          if (widget.external)
+            Icon(Icons.open_in_new_rounded, size: 14, color: ink.dark ? Colors.white.withValues(alpha: 0.45) : ink.faint),
           if (badge > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-              decoration: BoxDecoration(color: BrandColors.orange, borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(20)),
               child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
             ),
         ],
@@ -506,7 +581,7 @@ class _SideNavTileState extends State<SideNavTile> {
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: selected ? 0.1 : (_hover ? 0.05 : 0)),
+          color: selected ? ink.selected(widget.accent) : (_hover ? ink.hover : ink.hover.withValues(alpha: 0)),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Material(
@@ -597,7 +672,7 @@ class ServiceSection extends StatelessWidget {
                         child: Text(
                           s.title!,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4),
+                            color: SideInk.of(context).dark ? Colors.white.withValues(alpha: 0.4) : SideInk.of(context).heading,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.6,
@@ -682,14 +757,22 @@ class ServiceIconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Softer in the light: a paler tint, and a shorter glow under it.
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: filled ? color : color.withValues(alpha: 0.18),
+        color: filled ? color : color.withValues(alpha: dark ? 0.18 : 0.12),
         borderRadius: BorderRadius.circular(size * 0.3),
-        boxShadow: filled ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))] : null,
+        boxShadow: filled
+            ? [
+                dark
+                    ? BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))
+                    : BoxShadow(color: color.withValues(alpha: 0.28), blurRadius: 8, offset: const Offset(0, 3)),
+              ]
+            : null,
       ),
       child: Icon(icon, size: size * 0.55, color: filled ? Colors.white : color),
     );
@@ -714,6 +797,7 @@ class _ServiceHeaderState extends State<_ServiceHeader> {
   @override
   Widget build(BuildContext context) {
     final nav = widget.nav;
+    final ink = SideInk.of(context);
     return Semantics(
       button: true,
       expanded: widget.open,
@@ -723,7 +807,9 @@ class _ServiceHeaderState extends State<_ServiceHeader> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: widget.active || widget.open ? 0.06 : (_hover ? 0.04 : 0)),
+            color: widget.active || widget.open
+                ? ink.sectionOpen
+                : (_hover ? ink.sectionHover : ink.sectionHover.withValues(alpha: 0)),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Material(
@@ -745,14 +831,14 @@ class _ServiceHeaderState extends State<_ServiceHeader> {
                             nav.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14.5),
+                            style: TextStyle(color: ink.strong, fontWeight: FontWeight.w700, fontSize: 14.5),
                           ),
                           if (nav.tagline != null)
                             Text(
                               nav.tagline!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5),
+                              style: TextStyle(color: ink.quiet, fontSize: 11.5),
                             ),
                         ],
                       ),
@@ -761,7 +847,7 @@ class _ServiceHeaderState extends State<_ServiceHeader> {
                       turns: widget.open ? 0.5 : 0,
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
-                      child: Icon(Icons.expand_more_rounded, color: Colors.white.withValues(alpha: 0.6), size: 20),
+                      child: Icon(Icons.expand_more_rounded, color: ink.faint, size: 20),
                     ),
                   ],
                 ),
@@ -785,15 +871,16 @@ class _ScopeSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = SideInk.of(context);
     final several = scope.options.length > 1 || scope.addRoute != null;
     final initials = scope.label.trim().split(RegExp(r'\s+')).take(2).map((w) => w.isEmpty ? '' : w[0]).join().toUpperCase();
     final card = Container(
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: ink.well,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: ink.wellEdge),
       ),
       child: Row(
         children: [
@@ -812,16 +899,16 @@ class _ScopeSwitcher extends StatelessWidget {
                 Text(scope.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                    style: TextStyle(color: ink.strong, fontWeight: FontWeight.w700, fontSize: 13)),
                 if (scope.detail != null)
                   Text(scope.detail!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5)),
+                      style: TextStyle(color: ink.dark ? Colors.white.withValues(alpha: 0.55) : ink.quiet, fontSize: 11.5)),
               ],
             ),
           ),
-          if (several) Icon(Icons.unfold_more_rounded, color: Colors.white.withValues(alpha: 0.6), size: 18),
+          if (several) Icon(Icons.unfold_more_rounded, color: ink.faint, size: 18),
         ],
       ),
     );
@@ -925,21 +1012,27 @@ class _Company extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const name = TextStyle(color: BrandColors.orange, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 0.2);
-    final quiet = TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w500, fontSize: 12);
+    final ink = SideInk.of(context);
+    // The orange that reads as text on the white menu; the brand's on navy.
+    final name = TextStyle(
+        color: ink.dark ? BrandColors.orange : LightColors.orangeText,
+        fontWeight: FontWeight.w800,
+        fontSize: 13,
+        letterSpacing: 0.2);
+    final quiet = TextStyle(color: ink.quiet, fontWeight: FontWeight.w500, fontSize: 12);
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.only(top: 14, bottom: 2),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: ink.rule))),
       child: PlatformSidebar.isFolded(context)
           ? Tooltip(
               message: 'Developed by $_company',
-              child: const FittedBox(fit: BoxFit.scaleDown, child: Text(_company, maxLines: 1, style: name)),
+              child: FittedBox(fit: BoxFit.scaleDown, child: Text(_company, maxLines: 1, style: name)),
             )
           : Text.rich(
               TextSpan(children: [
                 TextSpan(text: 'Developed by ', style: quiet),
-                const TextSpan(text: _company, style: name),
+                TextSpan(text: _company, style: name),
               ]),
               textAlign: TextAlign.center,
               maxLines: 1,

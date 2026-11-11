@@ -36,19 +36,12 @@ class ServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final card = Container(
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF111A2E) : Colors.white,
+        color: brand.pick(LightColors.card, const Color(0xFF111A2E)),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: brand.glassBorder),
-        boxShadow: [
-          BoxShadow(
-            color: (dark ? Colors.black : BrandColors.navy).withValues(alpha: dark ? 0.25 : 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: brand.cardShadow,
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
@@ -177,11 +170,10 @@ class QuickActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return HoverLift(
       radius: 16,
       child: Material(
-        color: dark ? const Color(0xFF111A2E) : Colors.white,
+        color: brand.pick(LightColors.card, const Color(0xFF111A2E)),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,

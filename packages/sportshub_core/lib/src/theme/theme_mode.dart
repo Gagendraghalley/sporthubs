@@ -2,24 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Light or dark (the bar's switch, or Account -> Appearance); as the phone is
-/// set until they choose. Kept on the device.
+/// Light or dark (the bar's switch, or Account -> Appearance); light until
+/// they choose, whatever the phone is set to. Kept on the device.
 final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(ThemeModeController.new);
 
 class ThemeModeController extends Notifier<ThemeMode> {
   static const _key = 'theme_mode';
 
+  /// Before they've chosen: the light theme.
+  static const initial = ThemeMode.light;
+
   /// Read before the first frame (main.dart), so the app doesn't flash.
   static Future<ThemeMode> saved() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return ThemeMode.values.asNameMap()[prefs.getString(_key)] ?? ThemeMode.system;
+      return ThemeMode.values.asNameMap()[prefs.getString(_key)] ?? initial;
     } catch (_) {
-      return ThemeMode.system;
+      return initial;
     }
   }
 
-  ThemeModeController([this._initial = ThemeMode.system]);
+  ThemeModeController([this._initial = initial]);
   final ThemeMode _initial;
 
   @override
@@ -30,6 +33,41 @@ class ThemeModeController extends Notifier<ThemeMode> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_key, mode.name);
+    } catch (_) {
+      // Not kept on this device; it still applies until the app closes.
+    }
+  }
+}
+
+/// Less motion (Account -> Appearance): the decorative animations stand
+/// still, on top of the device's own reduce-motion setting. Kept on the
+/// device.
+final reduceMotionProvider = NotifierProvider<ReduceMotionController, bool>(ReduceMotionController.new);
+
+class ReduceMotionController extends Notifier<bool> {
+  static const _key = 'reduce_motion';
+
+  /// Read before the first frame (main.dart), with the theme.
+  static Future<bool> saved() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_key) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  ReduceMotionController([this._initial = false]);
+  final bool _initial;
+
+  @override
+  bool build() => _initial;
+
+  Future<void> set(bool reduce) async {
+    state = reduce;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_key, reduce);
     } catch (_) {
       // Not kept on this device; it still applies until the app closes.
     }

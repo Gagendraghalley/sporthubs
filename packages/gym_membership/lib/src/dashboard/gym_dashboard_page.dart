@@ -167,6 +167,10 @@ class _ConsoleState extends ConsumerState<_Console> {
     ];
 
 
+    // Against last month, from the payments already here: only when last
+    // month had some in the same days, so the trend is a fair one.
+    final incomeChange = payments?.valueOrNull == null ? null : incomeChangeMonthToDate(payments!.valueOrNull!, today);
+    final lastMonth = DateTime(today.year, today.month - 1, 1);
     final kpis = [
       ConsoleKpi(
         icon: Icons.groups_rounded,
@@ -175,6 +179,13 @@ class _ConsoleState extends ConsumerState<_Console> {
         count: standing.members,
         label: 'Total members',
         note: '${standing.active} active now',
+        trailing: newThisMonth > 0
+            ? ConsoleTrend(
+                text: '+$newThisMonth new',
+                up: true,
+                tooltip: '$newThisMonth joined in ${formatMonth(today)}',
+              )
+            : null,
         onTap: () => context.push(GymRoutes.membersFor(_id)),
       ),
       ConsoleKpi(
@@ -195,6 +206,12 @@ class _ConsoleState extends ConsumerState<_Console> {
           format: (v) => formatNu(v.round()),
           label: 'Income this month',
           note: formatMonth(today),
+          trailing: incomeChange == null
+              ? null
+              : ConsoleTrend.percent(
+                  incomeChange,
+                  tooltip: 'Against 1–${today.day} ${formatMonth(lastMonth).split(' ').first}',
+                ),
           onTap: () => context.push(GymRoutes.incomeFor(_id)),
         )
       else
@@ -342,30 +359,37 @@ class _QuickActions extends StatelessWidget {
       if (access.can(GymPermission.plans)) (Icons.add_card_rounded, 'New package', GymRoutes.newPlanFor(id)),
       if (access.can(VenuePermission.staff)) (Icons.group_add_outlined, 'Add staff', CoreRoutes.venueStaffFor(id)),
     ];
+    // The day's main action in orange, the rest quieter; each gives a
+    // little under the hand, and they arrive one after another.
+    const text = TextStyle(fontFamily: brandFont, fontWeight: FontWeight.w700, fontSize: 14.5);
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      children: [
+      children: staggered(offset: 8, step: const Duration(milliseconds: 45), [
         for (final (i, (icon, label, route)) in actions.indexed)
-          i == 0
-              ? FilledButton.icon(
-                  onPressed: () => context.push(route),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: BrandColors.orange,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
+          Pressable(
+            child: i == 0
+                ? FilledButton.icon(
+                    onPressed: () => context.push(route),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: context.brand.accent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      textStyle: text,
+                    ),
+                    icon: Icon(icon, size: 20),
+                    label: Text(label),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: () => context.push(route),
+                    style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 16), textStyle: text),
+                    icon: Icon(icon, size: 20),
+                    label: Text(label),
                   ),
-                  icon: Icon(icon, size: 20),
-                  label: Text(label),
-                )
-              : OutlinedButton.icon(
-                  onPressed: () => context.push(route),
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 16)),
-                  icon: Icon(icon, size: 20),
-                  label: Text(label),
-                ),
-      ],
+          ),
+      ]),
     );
   }
 }
@@ -397,7 +421,7 @@ class _SetupCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: ink.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: BrandColors.orange.withValues(alpha: 0.35)),
+        border: Border.all(color: context.brand.accent.withValues(alpha: 0.35)),
         boxShadow: ink.shadow,
       ),
       child: Column(
@@ -405,7 +429,7 @@ class _SetupCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.rocket_launch_rounded, color: BrandColors.orange),
+              Icon(Icons.rocket_launch_rounded, color: context.brand.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text('Get your gym ready',
@@ -424,8 +448,8 @@ class _SetupCard extends StatelessWidget {
               builder: (context, v, _) => LinearProgressIndicator(
                 value: v,
                 minHeight: 6,
-                color: BrandColors.orange,
-                backgroundColor: BrandColors.orange.withValues(alpha: 0.12),
+                color: context.brand.accent,
+                backgroundColor: context.brand.accent.withValues(alpha: 0.12),
               ),
             ),
           ),
@@ -630,13 +654,23 @@ class _RevenueCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!pickerInHeader) ...[picker, const SizedBox(height: 14)],
-          Text(
-            list == null ? '–' : formatNu(total),
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: ink.heading, height: 1.1),
-          ),
-          Text(
-            total == 0 && list != null ? 'No payments in the ${range.description}' : 'Payments, ${range.description}',
-            style: TextStyle(fontSize: 13, color: context.brand.muted),
+          // The total glides to the new range's, rather than jumping.
+          if (list == null)
+            Text('–', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: ink.heading, height: 1.1))
+          else
+            AnimatedCount(
+              value: total,
+              format: (v) => formatNu(v.round()),
+              duration: Motion.count,
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: ink.heading, height: 1.1),
+            ),
+          AnimatedSwitcher(
+            duration: Motion.of(context, Motion.hover),
+            child: Text(
+              total == 0 && list != null ? 'No payments in the ${range.description}' : 'Payments, ${range.description}',
+              key: ValueKey('$range-${total == 0}'),
+              style: TextStyle(fontSize: 13, color: context.brand.muted),
+            ),
           ),
           const SizedBox(height: 12),
           if (fill) Expanded(child: chart) else SizedBox(height: 220, child: chart),
@@ -774,7 +808,8 @@ class _ActivityCard extends StatelessWidget {
                           ),
                           child: Text(
                             _kinds[a.kind]!.$1,
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _kinds[a.kind]!.$2),
+                            style: TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.w700, color: context.brand.readable(_kinds[a.kind]!.$2)),
                           ),
                         ),
                       ],
@@ -854,7 +889,7 @@ class _EndingCard extends StatelessWidget {
                             ),
                             child: Text(
                               _daysText(left),
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: brand.readable(color)),
                             ),
                           );
                         }(),
