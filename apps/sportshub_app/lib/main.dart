@@ -25,12 +25,14 @@ Future<void> main() async {
   final splashLogo = SportsHubSplash.precacheLogo();
   await Supabase.initialize(url: Env.supabaseUrl, publishableKey: Env.supabaseAnonKey);
   final themeMode = await ThemeModeController.saved();
+  final reduceMotion = await ReduceMotionController.saved();
   await splashLogo;
   runApp(
     ProviderScope(
       overrides: [
         registeredModulesProvider.overrideWithValue(modules),
         themeModeProvider.overrideWith(() => ThemeModeController(themeMode)),
+        reduceMotionProvider.overrideWith(() => ReduceMotionController(reduceMotion)),
       ],
       child: const SportsHubApp(),
     ),
