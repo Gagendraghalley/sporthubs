@@ -43,7 +43,8 @@ select t.eq(public.my_access() -> 'permissions', '[]'::jsonb, 'a member has no t
 
 select t.as_user('00000000-0000-0000-0000-0000000001a0');
 select t.eq((public.my_access() ->> 'is_super_admin')::boolean, true, 'super admins are told so');
-select t.eq(jsonb_array_length(public.my_access() -> 'permissions'), 5, 'super admins have every team permission');
+select t.eq(jsonb_array_length(public.my_access() -> 'permissions'),
+            (select count(*) from public.permissions where scope = 'platform')::int, 'super admins have every team permission');
 select public.master_save_village(null, 1, '  New   Chokhor  Village ') as new_village \gset
 select t.eq((select name from public.villages where id = :new_village), 'New Chokhor Village', 'a new village, tidied');
 select t.eq(:new_village > 4739, true, 'new villages continue after the imported ids');

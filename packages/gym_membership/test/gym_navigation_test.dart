@@ -59,6 +59,7 @@ Future<GoRouter> showApp(WidgetTester tester, Size size, List<Override> who,
             (CoreRoutes.registerVenue, 'Register a venue'),
             (CoreRoutes.registerVenueForm, 'Register a gym'),
             (CoreRoutes.venueStaff, 'Staff'),
+            (CoreRoutes.venueRoles, 'Roles'),
             (CoreRoutes.editVenue, 'Gym settings'),
             (GymRoutes.dashboard, 'Dashboard'),
             (GymRoutes.checkIn, 'Check-in'),
@@ -101,7 +102,7 @@ void main() {
     }
     for (final label in [
       'Dashboard', 'Check-in', 'Members', 'Register member', 'Memberships & packages', 'Payments & income',
-      'Reports & analytics', 'Staff', 'Gym settings',
+      'Reports & analytics', 'Staff', 'Roles & permissions', 'Gym settings',
     ]) {
       expect(inMenu(label), findsOneWidget, reason: label);
     }
@@ -128,12 +129,18 @@ void main() {
     expect(inMenu('Paro Power Gym'), findsOneWidget, reason: 'the gym in the address');
   });
 
+  testWidgets("its organisation's roles are the gym's page too", (tester) async {
+    await showApp(tester, computer, person(gyms: owner), at: CoreRoutes.venueRolesFor(otherId));
+    expect(selected(tester, 'Roles & permissions'), isTrue);
+    expect(inMenu('Paro Power Gym'), findsOneWidget, reason: 'the gym in the address');
+  });
+
   testWidgets('the front desk sees only what its role allows', (tester) async {
     await showApp(tester, computer, person(gyms: frontDesk));
     for (final label in ['Check-in', 'Members', 'Register member', 'Reports & analytics']) {
       expect(inMenu(label), findsOneWidget, reason: label);
     }
-    for (final hidden in ['Memberships & packages', 'Payments & income', 'Staff', 'Gym settings', 'Manage']) {
+    for (final hidden in ['Memberships & packages', 'Payments & income', 'Staff', 'Roles & permissions', 'Gym settings', 'Manage']) {
       expect(inMenu(hidden), findsNothing, reason: hidden);
     }
     expect(inMenu('Front desk'), findsWidgets, reason: 'their role, and the heading');

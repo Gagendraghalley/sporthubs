@@ -40,7 +40,7 @@ class FakeProfiles extends Fake implements ProfileRepository {
 
 class FakeVenues extends Fake implements VenueRepository {
   @override
-  Future<List<MyVenue>> myVenues(String userId) async => const [];
+  Future<List<MyVenue>> myVenues() async => const [];
 
   @override
   Future<List<Venue>> listPublic({required String type, String? dzongkhag}) async => [

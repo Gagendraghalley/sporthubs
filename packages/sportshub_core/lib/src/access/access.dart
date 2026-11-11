@@ -17,7 +17,10 @@ abstract final class PlatformPermission {
   /// Turn modules on and off.
   static const modules = 'modules.manage';
 
-  static const all = [users, roles, masters, venuesVerify, modules];
+  /// Make organisations and choose which venues belong to each.
+  static const organisations = 'organisations.manage';
+
+  static const all = [users, roles, masters, venuesVerify, modules, organisations];
 }
 
 /// Running one venue (the core's; modules add their own, e.g. gym.check_in).
@@ -27,6 +30,10 @@ abstract final class VenuePermission {
 
   /// Add staff, make their accounts and choose their roles.
   static const staff = 'venue.staff';
+
+  /// The organisation's own roles, and what each role may do there. To
+  /// change them it's needed at every one of the organisation's venues.
+  static const roles = 'venue.roles';
 
   /// Payments and income.
   static const income = 'venue.income';
@@ -95,7 +102,9 @@ class AppPermission {
       );
 }
 
-/// A row of roles, with the permissions it gives.
+/// A row of roles, with the permissions it gives. Read from the table, a
+/// role is as SportsHub has it; read for an organisation
+/// (organisation_roles()), it is as that organisation's venues have it.
 class AppRole {
   final String id;
 
@@ -105,10 +114,29 @@ class AppRole {
   final String name;
   final String? description;
 
+  /// The organisation whose own role it is; null for SportsHub-wide roles,
+  /// which every organisation has.
+  final String? organisationId;
+
   /// Comes with SportsHub: can't be deleted (turn it off instead).
   final bool isSystem;
+
+  /// On (for an organisation: on there).
   final bool isActive;
   final Set<String> permissions;
+
+  /// For an organisation: SportsHub's own permissions for the role, when the
+  /// organisation changed them ([permissions] are then the organisation's).
+  final Set<String>? defaultPermissions;
+
+  /// For an organisation: it changed what this SportsHub-wide role allows.
+  final bool isCustomised;
+
+  /// For an organisation: it turned this SportsHub-wide role off for itself.
+  final bool isOffHere;
+
+  /// For an organisation: how many people have the role at its venues.
+  final int? people;
 
   const AppRole({
     required this.id,
@@ -117,8 +145,13 @@ class AppRole {
     required this.name,
     required this.permissions,
     this.description,
+    this.organisationId,
     this.isSystem = false,
     this.isActive = true,
+    this.defaultPermissions,
+    this.isCustomised = false,
+    this.isOffHere = false,
+    this.people,
   });
 
   /// The venue Owner always has every permission and can't be changed.
@@ -126,19 +159,88 @@ class AppRole {
 
   bool get isPlatform => scope == RoleScope.platform;
 
-  factory AppRole.fromJson(Map<String, dynamic> json) => AppRole(
+  /// Every organisation has it (it isn't one organisation's own).
+  bool get isShared => organisationId == null;
+
+  /// A row of roles with `role_permissions(permission_key)`, or a role from
+  /// organisation_roles() (`permissions` and `default_permissions` as keys).
+  factory AppRole.fromJson(Map<String, dynamic> json) {
+    Set<String> keys(Object? list) => {
+          for (final p in (list as List? ?? const []))
+            p is Map ? p['permission_key'] as String : p as String,
+        };
+    return AppRole(
+      id: json['id'] as String,
+      key: json['key'] as String,
+      scope: json['scope'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String?,
+      organisationId: json['organisation_id'] as String?,
+      isSystem: json['is_system'] as bool? ?? false,
+      isActive: json['is_active'] as bool? ?? true,
+      permissions: keys(json['permissions'] ?? json['role_permissions']),
+      defaultPermissions: json.containsKey('default_permissions') ? keys(json['default_permissions']) : null,
+      isCustomised: json['custom_permissions'] as bool? ?? false,
+      isOffHere: json['off_here'] as bool? ?? false,
+      people: (json['people'] as num?)?.toInt(),
+    );
+  }
+}
+
+/// A business on SportsHub that runs one or more venues (its branches).
+class Organisation {
+  final String id;
+  final String name;
+  final String? description;
+
+  /// How many venues belong to it (when read with them).
+  final int venueCount;
+
+  const Organisation({required this.id, required this.name, this.description, this.venueCount = 0});
+
+  /// A row of organisations, with `venues(count)` when counted.
+  factory Organisation.fromJson(Map<String, dynamic> json) => Organisation(
         id: json['id'] as String,
-        key: json['key'] as String,
-        scope: json['scope'] as String,
         name: json['name'] as String,
         description: json['description'] as String?,
-        isSystem: json['is_system'] as bool? ?? false,
-        isActive: json['is_active'] as bool? ?? true,
-        permissions: {
-          for (final p in (json['role_permissions'] as List? ?? const []))
-            (p as Map<String, dynamic>)['permission_key'] as String,
+        venueCount: switch (json['venues']) {
+          [Map<String, dynamic> c, ...] => (c['count'] as num?)?.toInt() ?? 0,
+          _ => 0,
         },
       );
+}
+
+/// An organisation's venue roles as its venues have them (organisation_roles()):
+/// SportsHub-wide ones first, with its changes, then its own.
+class OrganisationRoles {
+  final String organisationId;
+  final String organisationName;
+
+  /// The signed-in user may make and change them.
+  final bool canManage;
+
+  /// The venue permissions they may give or take away here.
+  final Set<String> grantable;
+  final List<AppRole> roles;
+
+  const OrganisationRoles({
+    required this.organisationId,
+    required this.organisationName,
+    required this.canManage,
+    required this.grantable,
+    required this.roles,
+  });
+
+  factory OrganisationRoles.fromJson(Map<String, dynamic> json) {
+    final organisation = json['organisation'] as Map<String, dynamic>;
+    return OrganisationRoles(
+      organisationId: organisation['id'] as String,
+      organisationName: organisation['name'] as String,
+      canManage: json['can_manage'] as bool? ?? false,
+      grantable: {for (final k in (json['grantable'] as List? ?? const [])) k as String},
+      roles: [for (final r in (json['roles'] as List? ?? const [])) AppRole.fromJson(r as Map<String, dynamic>)],
+    );
+  }
 }
 
 /// [permissions] grouped for a checklist: the core's first, then each

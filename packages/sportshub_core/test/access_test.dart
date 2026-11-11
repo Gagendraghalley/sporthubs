@@ -56,29 +56,106 @@ void main() {
       expect(cashier.roleName, 'Cashier');
     });
 
-    test('a venue_staff row: its role name and permissions; a role turned off is left out', () {
-      Map<String, dynamic> row(bool active) => {
-            'role': 'cashier',
-            'venue': {
-              'id': 'g1',
-              'type': 'gym',
-              'name': 'Peak Fitness',
-              'dzongkhag': 'Thimphu',
-              'verification_status': 'verified',
-              'created_at': '2026-11-01T00:00:00Z',
-            },
-            'role_info': {
-              'name': 'Cashier',
-              'is_active': active,
-              'role_permissions': [
-                {'permission_key': 'gym.payments'},
-              ],
-            },
-          };
-      final mine = MyVenue.fromJson(row(true))!;
+    test('one of my_venues(): the venue, its organisation, the role and what it allows there', () {
+      final mine = MyVenue.fromJson({
+        'role': 'cashier',
+        'role_name': 'Cashier',
+        'venue': {
+          'id': 'g1',
+          'type': 'gym',
+          'name': 'Peak Fitness',
+          'dzongkhag': 'Thimphu',
+          'verification_status': 'verified',
+          'created_at': '2026-11-01T00:00:00Z',
+          'organisation_id': 'o1',
+        },
+        'organisation': {'id': 'o1', 'name': 'Peak Fitness Pvt Ltd'},
+        'permissions': ['gym.payments'],
+      });
       expect(mine.roleName, 'Cashier');
+      expect(mine.organisationName, 'Peak Fitness Pvt Ltd');
+      expect(mine.venue.organisationId, 'o1');
       expect(mine.access.can('gym.payments'), isTrue);
-      expect(MyVenue.fromJson(row(false)), isNull);
+      expect(mine.access.can('gym.members'), isFalse);
+    });
+  });
+
+  group('organisations', () {
+    test('a role from the table is as SportsHub has it', () {
+      final r = AppRole.fromJson({
+        'id': 'r1',
+        'key': 'staff',
+        'scope': 'venue',
+        'name': 'Front desk',
+        'organisation_id': null,
+        'is_system': true,
+        'role_permissions': [
+          {'permission_key': 'gym.members'},
+        ],
+      });
+      expect(r.isShared, isTrue);
+      expect(r.permissions, {'gym.members'});
+      expect(r.defaultPermissions, isNull);
+    });
+
+    test('organisation_roles(): roles as its venues have them, what it changed, and who may change them', () {
+      final org = OrganisationRoles.fromJson({
+        'organisation': {'id': 'o1', 'name': 'Chain Fitness'},
+        'can_manage': true,
+        'grantable': ['gym.members', 'gym.plans'],
+        'roles': [
+          {
+            'id': 'r-trainer',
+            'key': 'trainer',
+            'scope': 'venue',
+            'organisation_id': null,
+            'name': 'Trainer',
+            'is_system': true,
+            'is_active': true,
+            'off_here': false,
+            'custom_permissions': true,
+            'permissions': ['gym.check_in', 'gym.members', 'gym.plans'],
+            'default_permissions': ['gym.check_in', 'gym.members'],
+            'people': 2,
+          },
+          {
+            'id': 'r-till',
+            'key': 'till_operator',
+            'scope': 'venue',
+            'organisation_id': 'o1',
+            'name': 'Till operator',
+            'is_active': false,
+            'off_here': false,
+            'custom_permissions': false,
+            'permissions': ['gym.payments'],
+            'default_permissions': ['gym.payments'],
+            'people': 0,
+          },
+        ],
+      });
+      expect(org.organisationName, 'Chain Fitness');
+      expect(org.canManage, isTrue);
+      expect(org.grantable, {'gym.members', 'gym.plans'});
+      final trainer = org.roles.first;
+      expect(trainer.isShared && trainer.isCustomised, isTrue);
+      expect(trainer.permissions.difference(trainer.defaultPermissions!), {'gym.plans'});
+      expect(trainer.people, 2);
+      final till = org.roles.last;
+      expect(till.isShared, isFalse);
+      expect(till.isActive, isFalse);
+    });
+
+    test('an organisation with its venues counted', () {
+      final o = Organisation.fromJson({
+        'id': 'o1',
+        'name': 'Chain Fitness',
+        'description': null,
+        'venues': [
+          {'count': 3},
+        ],
+      });
+      expect(o.venueCount, 3);
+      expect(Organisation.fromJson({'id': 'o2', 'name': 'Empty'}).venueCount, 0);
     });
   });
 
@@ -175,7 +252,7 @@ void main() {
 
     testWidgets('super admins see everything', (tester) async {
       await showAdmin(tester, const PlatformAccess(isSuperAdmin: true, isActive: true, permissions: {}));
-      for (final t in ['Users', 'Roles and permissions', 'Master data', 'Venues to verify', 'Modules']) {
+      for (final t in ['Users', 'Roles and permissions', 'Organisations', 'Master data', 'Venues to verify', 'Modules']) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
     });

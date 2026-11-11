@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../access/organisation_screens.dart';
 import '../access/role_screens.dart';
 import '../access/user_screens.dart';
 import '../admin/admin_screens.dart';
@@ -93,19 +94,45 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: CoreRoutes.venueManage, builder: (_, s) => VenueManageScreen(venueId: s.pathParameters['id']!)),
           GoRoute(path: CoreRoutes.editVenue, builder: (_, s) => VenueFormScreen(venueId: s.pathParameters['id'])),
           GoRoute(path: CoreRoutes.venueStaff, builder: (_, s) => VenueStaffScreen(venueId: s.pathParameters['id']!)),
+          GoRoute(path: CoreRoutes.venueRoles, builder: (_, s) => VenueRolesScreen(venueId: s.pathParameters['id']!)),
+          // Before ':roleId', so 'new' isn't taken for a role's id.
+          GoRoute(
+            path: CoreRoutes.venueRoleNew,
+            builder: (_, s) => VenueRoleEditorScreen(venueId: s.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: CoreRoutes.venueRole,
+            builder: (_, s) => VenueRoleEditorScreen(venueId: s.pathParameters['id']!, roleId: s.pathParameters['roleId']),
+          ),
           GoRoute(path: CoreRoutes.admin, builder: (_, __) => const AdminScreen()),
           GoRoute(path: CoreRoutes.adminVenues, builder: (_, __) => const AdminVenuesScreen()),
           GoRoute(path: CoreRoutes.adminModules, builder: (_, __) => const AdminModulesScreen()),
-          GoRoute(path: CoreRoutes.adminUsers, builder: (_, __) => const AdminUsersScreen()),
+          GoRoute(
+            path: CoreRoutes.adminUsers,
+            builder: (_, s) => AdminUsersScreen(organisationId: s.uri.queryParameters['org']),
+          ),
           GoRoute(path: CoreRoutes.adminUser, builder: (_, s) => AdminUserScreen(userId: s.pathParameters['id']!)),
-          GoRoute(path: CoreRoutes.adminRoles, builder: (_, __) => const AdminRolesScreen()),
+          GoRoute(
+            path: CoreRoutes.adminRoles,
+            builder: (_, s) => AdminRolesScreen(organisationId: s.uri.queryParameters['org']),
+          ),
           // Before ':id', so 'new' isn't taken for a role's id.
           GoRoute(
             path: CoreRoutes.adminRoleNew,
-            builder: (_, s) => RoleEditorScreen(scope: s.uri.queryParameters['scope']),
+            builder: (_, s) =>
+                RoleEditorScreen(scope: s.uri.queryParameters['scope'], organisationId: s.uri.queryParameters['org']),
           ),
-          GoRoute(path: CoreRoutes.adminRole, builder: (_, s) => RoleEditorScreen(roleId: s.pathParameters['id'])),
+          GoRoute(
+            path: CoreRoutes.adminRole,
+            builder: (_, s) =>
+                RoleEditorScreen(roleId: s.pathParameters['id'], organisationId: s.uri.queryParameters['org']),
+          ),
           GoRoute(path: CoreRoutes.adminMasters, builder: (_, __) => const AdminMastersScreen()),
+          GoRoute(path: CoreRoutes.adminOrganisations, builder: (_, __) => const AdminOrganisationsScreen()),
+          GoRoute(
+            path: CoreRoutes.adminOrganisation,
+            builder: (_, s) => AdminOrganisationScreen(organisationId: s.pathParameters['id']!),
+          ),
           for (final m in modules) ...m.routes,
         ],
       ),

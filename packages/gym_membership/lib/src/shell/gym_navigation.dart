@@ -67,6 +67,8 @@ ServiceNav gymNavigation(WidgetRef ref, String location,
     NavSection(title: 'Manage', items: [
       if (a.can(VenuePermission.staff))
         NavDestination(label: 'Staff', icon: Icons.badge_outlined, route: CoreRoutes.venueStaffFor(id)),
+      if (a.can(VenuePermission.roles))
+        NavDestination(label: 'Roles & permissions', icon: Icons.verified_user_outlined, route: CoreRoutes.venueRolesFor(id)),
       if (a.can(VenuePermission.edit))
         NavDestination(label: 'Gym settings', icon: Icons.tune_rounded, route: CoreRoutes.editVenueFor(id)),
     ]),

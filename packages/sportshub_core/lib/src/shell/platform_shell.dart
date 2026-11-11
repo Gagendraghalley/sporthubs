@@ -150,6 +150,8 @@ ServiceNav? adminNav(PlatformAccess access, {int pending = 0}) {
           const NavDestination(label: 'Users', icon: Icons.people_alt_outlined, route: CoreRoutes.adminUsers),
         if (access.can(PlatformPermission.roles))
           const NavDestination(label: 'Roles & permissions', icon: Icons.verified_user_outlined, route: CoreRoutes.adminRoles),
+        if (access.can(PlatformPermission.organisations))
+          const NavDestination(label: 'Organisations', icon: Icons.apartment_rounded, route: CoreRoutes.adminOrganisations),
         if (access.can(PlatformPermission.venuesVerify))
           NavDestination(
               label: 'Venues to verify', icon: Icons.fact_check_outlined, route: CoreRoutes.adminVenues, badge: pending),

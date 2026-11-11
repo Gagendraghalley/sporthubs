@@ -16,9 +16,10 @@ import '../widgets/form_fields.dart';
 import 'venue.dart';
 import 'venue_repository.dart';
 
-/// The venue roles [venue] lets someone give: SportsHub's user managers any
-/// (Owner too); at the venue, roles whose every permission they have
-/// themselves, never Owner. The database checks the same.
+/// The venue roles [venue] lets someone give, from [roles] as the venue's
+/// organisation has them: SportsHub's user managers any (Owner too); at the
+/// venue, roles whose every permission they have themselves, never Owner.
+/// The database checks the same.
 List<AppRole> givableVenueRoles(List<AppRole> roles, VenueAccess? venue, PlatformAccess platform) {
   if (platform.can(PlatformPermission.users)) return roles;
   if (venue == null || !venue.can(VenuePermission.staff)) return const [];
@@ -39,7 +40,8 @@ class VenueStaffScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final access = ref.watch(venueAccessProvider(venueId)).valueOrNull;
     final platform = ref.watch(myAccessProvider).valueOrNull ?? PlatformAccess.none;
-    final roles = givableVenueRoles(ref.watch(venueRolesProvider).valueOrNull ?? const [], access, platform);
+    final choices = ref.watch(venueRoleChoicesProvider(access?.venue.organisationId)).valueOrNull;
+    final roles = givableVenueRoles(choices ?? const [], access, platform);
     final canEdit = roles.isNotEmpty;
     final me = ref.watch(currentUserIdProvider);
     return AppPage(

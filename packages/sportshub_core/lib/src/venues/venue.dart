@@ -78,6 +78,10 @@ class Venue {
   final String? createdBy;
   final DateTime createdAt;
 
+  /// The business it belongs to (organisations): its roles are as that
+  /// organisation has them.
+  final String? organisationId;
+
   const Venue({
     required this.id,
     required this.type,
@@ -99,6 +103,7 @@ class Venue {
     this.ratingAverage,
     this.ratingCount = 0,
     this.createdBy,
+    this.organisationId,
   });
 
   bool get isVerified => verificationStatus == VerificationStatus.verified;
@@ -129,6 +134,7 @@ class Venue {
         ratingCount: json['rating_count'] as int? ?? 0,
         createdBy: json['created_by'] as String?,
         createdAt: DateTime.parse(json['created_at'] as String),
+        organisationId: json['organisation_id'] as String?,
       );
 }
 
@@ -176,35 +182,30 @@ class VenueDraft {
 }
 
 /// A venue the signed-in user runs, with their role there and what it lets
-/// them do.
+/// them do (as the venue's organisation has the role).
 class MyVenue {
   final Venue venue;
   final String role;
   final String roleName;
   final Set<String> permissions;
 
-  MyVenue(this.venue, this.role, {String? roleName, this.permissions = const {}})
+  /// The organisation the venue belongs to.
+  final String? organisationName;
+
+  MyVenue(this.venue, this.role, {String? roleName, this.permissions = const {}, this.organisationName})
       : roleName = roleName ?? VenueRole.label(role);
 
   VenueAccess get access => VenueAccess(venue, role, roleName: roleName, permissions: permissions);
 
-  /// A venue_staff row with its venue and role:
-  /// `role, venue:venues(*), role_info:roles(name, is_active, role_permissions(permission_key))`.
-  /// Null when the venue is gone or the role is turned off.
-  static MyVenue? fromJson(Map<String, dynamic> json) {
-    final venue = json['venue'] as Map<String, dynamic>?;
-    final info = json['role_info'] as Map<String, dynamic>?;
-    if (venue == null || (info != null && info['is_active'] == false)) return null;
-    return MyVenue(
-      Venue.fromJson(venue),
-      json['role'] as String,
-      roleName: info?['name'] as String?,
-      permissions: {
-        for (final p in (info?['role_permissions'] as List? ?? const []))
-          (p as Map<String, dynamic>)['permission_key'] as String,
-      },
-    );
-  }
+  /// One of my_venues(): `{venue, role, role_name, organisation: {id, name},
+  /// permissions}`. The database leaves out roles that are turned off.
+  factory MyVenue.fromJson(Map<String, dynamic> json) => MyVenue(
+        Venue.fromJson(json['venue'] as Map<String, dynamic>),
+        json['role'] as String,
+        roleName: json['role_name'] as String?,
+        organisationName: (json['organisation'] as Map<String, dynamic>?)?['name'] as String?,
+        permissions: {for (final p in (json['permissions'] as List? ?? const [])) p as String},
+      );
 }
 
 /// Someone on a venue's staff list.

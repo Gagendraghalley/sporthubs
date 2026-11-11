@@ -22,7 +22,7 @@ final venueProvider = FutureProvider.family<Venue?, String>((ref, id) => ref.wat
 final myVenuesProvider = FutureProvider<List<MyVenue>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return const [];
-  return ref.watch(venueRepositoryProvider).myVenues(userId);
+  return ref.watch(venueRepositoryProvider).myVenues();
 });
 
 /// The venue and the signed-in user's place there: their venue_staff role
@@ -49,9 +49,6 @@ final venueReviewsProvider = FutureProvider.family<List<VenueReview>, String>(
   (ref, venueId) => ref.watch(venueRepositoryProvider).reviews(venueId),
 );
 
-/// A venue_staff row's role, with its name and permissions.
-const _roleInfo = 'role_info:roles!venue_staff_role_fkey(name, is_active, role_permissions(permission_key))';
-
 class VenueRepository {
   VenueRepository(this._client);
   final SupabaseClient _client;
@@ -70,14 +67,12 @@ class VenueRepository {
     return row == null ? null : Venue.fromJson(row);
   }
 
-  /// The venues [userId] runs, with what their role lets them do. None while
+  /// The venues the signed-in user runs, by name, with what their role lets
+  /// them do there (as each venue's organisation has the role). None while
   /// their account is turned off; roles that are turned off are left out.
-  Future<List<MyVenue>> myVenues(String userId) async {
-    final me = await _client.from('profiles').select('is_active').eq('id', userId).maybeSingle();
-    if (me != null && me['is_active'] == false) return const [];
-    final rows = await _client.from('venue_staff').select('role, venue:venues(*), $_roleInfo').eq('user_id', userId);
-    return rows.map(MyVenue.fromJson).whereType<MyVenue>().toList()
-      ..sort((a, b) => a.venue.name.toLowerCase().compareTo(b.venue.name.toLowerCase()));
+  Future<List<MyVenue>> myVenues() async {
+    final rows = await _client.rpc('my_venues') as List;
+    return [for (final r in rows) MyVenue.fromJson(r as Map<String, dynamic>)];
   }
 
   /// A new venue, waiting for the SportsHub team; the caller becomes its

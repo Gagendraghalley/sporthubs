@@ -46,9 +46,13 @@ enum UserFilter {
 bool canGiveRole(PlatformAccess access, AppRole role) =>
     access.isSuperAdmin || (!role.isLocked && role.permissions.every(access.can));
 
-/// Admin -> Users: every account, to find someone and change their roles.
+/// Admin -> Users: every account, to find someone and change their roles;
+/// or only the people who work at one organisation's venues.
 class AdminUsersScreen extends ConsumerStatefulWidget {
-  const AdminUsersScreen({super.key});
+  /// The organisation to start with (from its page).
+  final String? organisationId;
+
+  const AdminUsersScreen({super.key, this.organisationId});
 
   @override
   ConsumerState<AdminUsersScreen> createState() => _AdminUsersScreenState();
@@ -58,7 +62,17 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   final _searchField = TextEditingController();
   String _search = '';
   UserFilter _filter = UserFilter.all;
+  late String? _organisationId = widget.organisationId;
   Timer? _debounce;
+
+  UserQuery get _query => (search: _search, organisationId: _organisationId);
+
+  @override
+  void didUpdateWidget(AdminUsersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Opened again for another organisation (a new address).
+    if (widget.organisationId != oldWidget.organisationId) _organisationId = widget.organisationId;
+  }
 
   @override
   void dispose() {
@@ -73,7 +87,9 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       title: 'Users',
       permission: PlatformPermission.users,
       builder: (context, access) {
-        final users = ref.watch(managedUsersProvider(_search));
+        final users = ref.watch(managedUsersProvider(_query));
+        final organisations = ref.watch(organisationsProvider).valueOrNull ?? const <Organisation>[];
+        final organisationName = organisations.where((o) => o.id == _organisationId).firstOrNull?.name;
         final roles = ref.watch(rolesProvider).valueOrNull ?? const <AppRole>[];
         final roleNames = {for (final r in roles) r.id: r.name};
         // A venue role is kept by its key ('staff'); shown by its name.
@@ -86,7 +102,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
             label: const Text('New user'),
           ),
           body: RefreshIndicator(
-            onRefresh: () async => ref.invalidate(managedUsersProvider(_search)),
+            onRefresh: () async => ref.invalidate(managedUsersProvider(_query)),
             child: ListView(
               padding: pagePadding(context, bottom: 96),
               children: [
@@ -95,20 +111,37 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                   flex: (3, 2),
                   spacing: 16,
                   first: [
-                    TextField(
-                      controller: _searchField,
-                      textInputAction: TextInputAction.search,
-                      onChanged: (text) {
-                        _debounce?.cancel();
-                        _debounce = Timer(const Duration(milliseconds: 350), () {
-                          if (mounted) setState(() => _search = text.trim());
-                        });
-                      },
-                      decoration: const InputDecoration(
-                        hintText: 'Search name, email, phone or member code',
-                        prefixIcon: Icon(Icons.search_rounded),
-                      ),
-                    ),
+                    // The search and the organisation side by side; one
+                    // under the other on a phone.
+                    LayoutBuilder(builder: (context, box) {
+                      final search = TextField(
+                        controller: _searchField,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (text) {
+                          _debounce?.cancel();
+                          _debounce = Timer(const Duration(milliseconds: 350), () {
+                            if (mounted) setState(() => _search = text.trim());
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          hintText: 'Search name, email, phone or member code',
+                          prefixIcon: Icon(Icons.search_rounded),
+                        ),
+                      );
+                      final organisation = _OrganisationFilter(
+                        organisations: organisations,
+                        value: _organisationId,
+                        onChanged: (id) => setState(() => _organisationId = id),
+                      );
+                      if (box.maxWidth < 620) {
+                        return Column(children: [search, const SizedBox(height: 10), organisation]);
+                      }
+                      return Row(children: [
+                        Expanded(child: search),
+                        const SizedBox(width: 12),
+                        SizedBox(width: 280, child: organisation),
+                      ]);
+                    }),
                   ],
                   second: [
                     Padding(
@@ -128,11 +161,17 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                 const SizedBox(height: 12),
                 AsyncValueView<List<ManagedUser>>(
                   value: users,
-                  onRetry: () => ref.invalidate(managedUsersProvider(_search)),
+                  onRetry: () => ref.invalidate(managedUsersProvider(_query)),
                   data: (all) {
                     final shown = all.where(_filter.matches).toList();
                     if (shown.isEmpty) {
-                      return const EmptyState(icon: Icons.person_search_rounded, title: 'Nobody here');
+                      return EmptyState(
+                        icon: Icons.person_search_rounded,
+                        title: 'Nobody here',
+                        message: all.isEmpty && _search.isEmpty && organisationName != null
+                            ? 'Nobody works at $organisationName\'s venues yet.'
+                            : null,
+                      );
                     }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -143,7 +182,12 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                             child: FormHint(
                                 'The 200 newest accounts${_search.isEmpty ? '' : ' that match'}. Search to find others.'),
                           ),
-                        _UsersTable(users: shown, roleNames: roleNames, venueRoleNames: venueRoleNames),
+                        _UsersTable(
+                          users: shown,
+                          roleNames: roleNames,
+                          venueRoleNames: venueRoleNames,
+                          organisationId: _organisationId,
+                        ),
                       ],
                     );
                   },
@@ -164,6 +208,33 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   }
 }
 
+/// The value of [_OrganisationFilter] for everyone.
+const _anyOrganisation = '';
+
+/// Everyone, or only the people who work at one organisation's venues.
+class _OrganisationFilter extends StatelessWidget {
+  final List<Organisation> organisations;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const _OrganisationFilter({required this.organisations, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SearchableDropdown<String>(
+      value: value ?? _anyOrganisation,
+      decoration: const InputDecoration(labelText: 'Organisation', prefixIcon: Icon(Icons.apartment_rounded)),
+      searchHint: 'Find an organisation',
+      options: [
+        const DropdownOption(_anyOrganisation, 'All organisations', detail: 'Everyone, staff or not'),
+        for (final o in organisations)
+          DropdownOption(o.id, o.name, detail: o.venueCount == 1 ? '1 venue' : '${o.venueCount} venues'),
+      ],
+      onChanged: (id) => onChanged(id == null || id == _anyOrganisation ? null : id),
+    );
+  }
+}
+
 /// Every account as a table: who, phone, member code, the team's roles,
 /// their venues, on or off, and when they joined; tap a row to open it.
 /// On a narrow window the extra columns step aside and the person's cell
@@ -173,7 +244,15 @@ class _UsersTable extends StatelessWidget {
   final Map<String, String> roleNames;
   final Map<String, String> venueRoleNames;
 
-  const _UsersTable({required this.users, required this.roleNames, required this.venueRoleNames});
+  /// The organisation being looked at: its venues come first in Venues.
+  final String? organisationId;
+
+  const _UsersTable({
+    required this.users,
+    required this.roleNames,
+    required this.venueRoleNames,
+    this.organisationId,
+  });
 
   List<String> _roles(ManagedUser u) => [
         for (final id in u.platformRoleIds)
@@ -227,7 +306,7 @@ class _UsersTable extends StatelessWidget {
           flex: 4,
           showFrom: 860,
           sortBy: (u) => u.venueRoles.length,
-          cell: (context, u) => _VenuesCell(user: u, venueRoleNames: venueRoleNames),
+          cell: (context, u) => _VenuesCell(user: u, venueRoleNames: venueRoleNames, organisationId: organisationId),
         ),
         GridColumn(
           key: 'status',
@@ -329,18 +408,21 @@ class _RolesCell extends StatelessWidget {
   }
 }
 
-/// The first venue they work at and their role there; how many more.
+/// The first venue they work at (at [organisationId], when one is chosen)
+/// and their role there; how many more.
 class _VenuesCell extends StatelessWidget {
   final ManagedUser user;
   final Map<String, String> venueRoleNames;
+  final String? organisationId;
 
-  const _VenuesCell({required this.user, required this.venueRoleNames});
+  const _VenuesCell({required this.user, required this.venueRoleNames, this.organisationId});
 
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
     if (user.venueRoles.isEmpty) return const _Plain(null);
-    final first = user.venueRoles.first;
+    final first =
+        user.venueRoles.where((v) => v.organisationId == organisationId).firstOrNull ?? user.venueRoles.first;
     final more = user.venueRoles.length - 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -757,7 +839,9 @@ class _VenueRoleDialogState extends ConsumerState<_VenueRoleDialog> {
   @override
   Widget build(BuildContext context) {
     final venues = ref.watch(allVenuesProvider).valueOrNull ?? const <Venue>[];
-    final roles = ref.watch(venueRolesProvider).valueOrNull ?? const <AppRole>[];
+    // The chosen venue's roles, as its organisation has them.
+    final organisationId = venues.where((v) => v.id == _venueId).firstOrNull?.organisationId;
+    final roles = ref.watch(venueRoleChoicesProvider(organisationId)).valueOrNull ?? const <AppRole>[];
     final choosable = widget.current != null ? venues : venues.where((v) => !widget.exclude.contains(v.id)).toList();
     return AlertDialog(
       title: Text(widget.current == null ? 'Add to a venue' : 'Role at ${widget.current!.venueName}'),

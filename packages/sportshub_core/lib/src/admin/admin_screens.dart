@@ -43,8 +43,15 @@ class AdminScreen extends ConsumerWidget {
             MenuTile(
               icon: Icons.admin_panel_settings_outlined,
               title: 'Roles and permissions',
-              subtitle: "The team's roles and the venue roles staff get",
+              subtitle: "The team's roles, and venue roles: SportsHub-wide or an organisation's own",
               onTap: () => context.push(CoreRoutes.adminRoles),
+            ),
+          if (access.can(PlatformPermission.organisations))
+            MenuTile(
+              icon: Icons.apartment_rounded,
+              title: 'Organisations',
+              subtitle: 'The businesses that run venues, and their branches',
+              onTap: () => context.push(CoreRoutes.adminOrganisations),
             ),
           if (access.can(PlatformPermission.masters))
             MenuTile(

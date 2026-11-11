@@ -81,7 +81,7 @@ Sign up in the app, then in Supabase → SQL Editor:
 update public.profiles set role = 'admin' where email = 'you@example.com';
 ```
 
-That makes you a **super admin**: you can do everything. You see SportsHub admin on the home page: **Users**, **Roles and permissions**, **Master data**, **Venues to verify** and **Modules**. From there you make the rest of the team's accounts and give them roles, so the SQL editor is only needed for this first one. Users can't change their own role.
+That makes you a **super admin**: you can do everything. You see SportsHub admin on the home page: **Users**, **Roles and permissions**, **Organisations**, **Master data**, **Venues to verify** and **Modules**. From there you make the rest of the team's accounts and give them roles, so the SQL editor is only needed for this first one. Users can't change their own role.
 
 ### Test accounts
 
@@ -154,14 +154,29 @@ Folded (a computer), the menu is icons and a service's icon opens its pages besi
 - **Feedback**: `runAction` / `showFeedback` show a tick or a warning in a floating bar; `EmptyState` says what to do next.
 - **Service cards** (`service_cards.dart`): `ServiceCard`, `ServiceStat(s)`, `QuickActionTile`.
 
+### Organisations
+
+An **organisation** is the business that runs one or more venues (its branches): `organisations`, and `venues.organisation_id`. Every venue belongs to one. A new venue gets one of its own, named after it, so nothing changes for a single gym. The SportsHub team (`organisations.manage`, Admin → Organisations) renames them, makes new ones, and moves venues between them, so a business with several gyms is one organisation and its roles are the same at all of them.
+
 ### Roles and permissions
 
 A **permission** is something the database checks (`permissions`; the keys are fixed in the migrations). A **role** is a named set of permissions (`roles`, `role_permissions`), made and changed under Admin → Roles and permissions.
 
 | Scope | Permissions | Roles that come with SportsHub |
 |---|---|---|
-| SportsHub team (`user_roles`) | `users.manage`, `roles.manage`, `masters.manage`, `venues.verify`, `modules.manage` | Administrator (all five) |
-| A venue (`venue_staff.role`) | `venue.edit`, `venue.staff`, `venue.income`, and the gym's `gym.members`, `gym.payments`, `gym.check_in`, `gym.plans` | Owner (always everything), Manager, Front desk (`staff`), Trainer |
+| SportsHub team (`user_roles`) | `users.manage`, `roles.manage`, `masters.manage`, `venues.verify`, `modules.manage`, `organisations.manage` | Administrator (all six) |
+| A venue (`venue_staff.role`) | `venue.edit`, `venue.staff`, `venue.roles`, `venue.income`, and the gym's `gym.members`, `gym.payments`, `gym.check_in`, `gym.plans`, `gym.register` | Owner (always everything), Manager, Front desk (`staff`), Trainer |
+
+**Venue roles are SportsHub-wide or one organisation's own** (`roles.organisation_id`):
+
+- **SportsHub-wide** (`organisation_id` null): every organisation has them, with the same permissions: the generic setup that applies the same everywhere.
+- **Changed for one organisation**: an organisation can change what a SportsHub-wide role allows at its venues, or turn it off there (`organisation_role_settings`, `organisation_role_permissions`). Other organisations keep it as it is. Without a change, the organisation follows SportsHub's role, including the team's later changes to it; "Use SportsHub's" goes back to that.
+- **An organisation's own** (`organisation_id` set): made by or for the organisation, given only at its venues, and seen only by its people and the team.
+- Owner always has everything, everywhere. The team's own roles are always SportsHub-wide.
+
+**Who configures them.** The team (`roles.manage`) manages SportsHub-wide roles and any organisation's: Admin → Roles and permissions, then "Whose roles". An organisation's own people manage its roles from a venue's **Roles & permissions** page (the gym's menu → Manage), if they have `venue.roles` at **every** one of its venues (an Owner of all of them does). They add or take away only permissions they have at all of its venues themselves.
+
+The database works out what a role allows at a venue (`has_venue_permission`, `role_permission_keys`); the app reads it through `my_venues()` and `organisation_roles()`.
 
 - **Super admins** (`profiles.role = 'admin'`) can do everything. Only another super admin makes or unmakes one, and nobody can unmake themselves.
 - **Nobody can give a permission they don't have.** Team roles and venue roles can only be given, changed or taken away by someone holding every permission in them. Only super admins and user managers make someone a venue's Owner, and a venue always keeps one.

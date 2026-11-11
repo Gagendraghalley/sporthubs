@@ -61,7 +61,7 @@ select t.eq((select (status, member_id is null, price)::text from public.gym_sub
 select t.eq((select count(*) from public.payments where venue_id = :'gym')::int, 0, 'front desk sees no income');
 
 select t.fails(format($$select public.gym_register_member(%L, '{"full_name":"Karma Wangmo","phone":"17123456"}')$$, :'gym'),
-               'already registered here');
+               'belongs to Karma Wangmo');
 select t.fails(format($$select public.gym_register_member(%L, '{"full_name":"Bad Phone","phone":"123"}')$$, :'gym'), 'phone number');
 select t.fails(format($$select public.gym_register_member(%L, '{"full_name":"Bad Mail","phone":"17000001","email":"x@"}')$$, :'gym'),
                'email');

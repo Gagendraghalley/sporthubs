@@ -20,18 +20,45 @@ final myAccessProvider = FutureProvider<PlatformAccess>((ref) async {
 final permissionsProvider =
     FutureProvider<List<AppPermission>>((ref) => ref.watch(accessRepositoryProvider).permissions());
 
-/// Every role, turned off ones too: the team's first, then venues'.
+/// Every role the signed-in user may see, turned off ones too: the team's
+/// first, then venues'. SportsHub-wide roles as SportsHub has them, and the
+/// own roles of organisations they may see.
 final rolesProvider = FutureProvider<List<AppRole>>((ref) => ref.watch(accessRepositoryProvider).roles());
 
-/// The venue roles that can be given now (turned on), Owner first.
-final venueRolesProvider = FutureProvider<List<AppRole>>((ref) async {
-  final roles = await ref.watch(rolesProvider.future);
-  return roles.where((r) => r.scope == RoleScope.venue && r.isActive).toList();
+/// Organisation [id]'s venue roles as its venues have them, and what the
+/// signed-in user may change there.
+final organisationRolesProvider = FutureProvider.family<OrganisationRoles, String>(
+  (ref, id) => ref.watch(accessRepositoryProvider).organisationRoles(id),
+);
+
+/// The venue roles that can be given now at organisation [organisationId]'s
+/// venues (turned on there), Owner first, each with what it allows there.
+/// Without an organisation, SportsHub's own.
+final venueRoleChoicesProvider = FutureProvider.family<List<AppRole>, String?>((ref, organisationId) async {
+  if (organisationId == null) {
+    final roles = await ref.watch(rolesProvider.future);
+    return roles.where((r) => r.scope == RoleScope.venue && r.isShared && r.isActive).toList();
+  }
+  final organisation = await ref.watch(organisationRolesProvider(organisationId).future);
+  return organisation.roles.where((r) => r.isActive).toList();
 });
 
-/// Accounts matching [search] (name, email or phone), newest first.
-final managedUsersProvider = FutureProvider.autoDispose.family<List<ManagedUser>, String>(
-  (ref, search) => ref.watch(accessRepositoryProvider).users(search: search),
+/// Every organisation, by name, with how many venues each has (for the team).
+final organisationsProvider =
+    FutureProvider<List<Organisation>>((ref) => ref.watch(accessRepositoryProvider).organisations());
+
+/// The venues of organisation [id], by name.
+final organisationVenuesProvider = FutureProvider.autoDispose.family<List<Venue>, String>(
+  (ref, id) => ref.watch(accessRepositoryProvider).organisationVenues(id),
+);
+
+/// What Admin -> Users looks for: [search] in name, email, phone or member
+/// code; with [organisationId], only people who work at its venues.
+typedef UserQuery = ({String search, String? organisationId});
+
+/// Accounts matching the query, newest first.
+final managedUsersProvider = FutureProvider.autoDispose.family<List<ManagedUser>, UserQuery>(
+  (ref, q) => ref.watch(accessRepositoryProvider).users(search: q.search, organisationId: q.organisationId),
 );
 
 final managedUserProvider = FutureProvider.autoDispose.family<ManagedUser?, String>(
@@ -91,6 +118,7 @@ class ManagedUser {
                 venueId: (s['venue'] as Map<String, dynamic>)['id'] as String,
                 venueName: (s['venue'] as Map<String, dynamic>)['name'] as String,
                 role: s['role'] as String,
+                organisationId: (s['venue'] as Map<String, dynamic>)['organisation_id'] as String?,
               ),
         ]..sort((a, b) => a.venueName.toLowerCase().compareTo(b.venueName.toLowerCase())),
       );
@@ -102,7 +130,10 @@ class UserVenueRole {
   final String venueName;
   final String role;
 
-  const UserVenueRole({required this.venueId, required this.venueName, required this.role});
+  /// The organisation the venue belongs to.
+  final String? organisationId;
+
+  const UserVenueRole({required this.venueId, required this.venueName, required this.role, this.organisationId});
 }
 
 /// What the admin-users Edge Function made.
@@ -125,7 +156,7 @@ class AccessRepository {
 
   static const _userColumns = 'id, full_name, email, phone, role, is_active, member_code, created_at, '
       'user_roles!user_roles_user_id_fkey(role_id), '
-      'venue_staff!venue_staff_user_id_fkey(role, venue:venues(id, name))';
+      'venue_staff!venue_staff_user_id_fkey(role, venue:venues(id, name, organisation_id))';
 
   Future<PlatformAccess> myAccess() async =>
       PlatformAccess.fromJson(await _client.rpc('my_access') as Map<String, dynamic>);
@@ -138,7 +169,8 @@ class AccessRepository {
   Future<List<AppRole>> roles() async {
     final rows = await _client
         .from('roles')
-        .select('id, key, scope, name, description, is_system, is_active, sort_order, role_permissions(permission_key)')
+        .select('id, key, scope, organisation_id, name, description, is_system, is_active, sort_order, '
+            'role_permissions(permission_key)')
         .order('scope')
         .order('sort_order')
         .order('name');
@@ -146,7 +178,8 @@ class AccessRepository {
   }
 
   /// A new role ([roleId] null) or changes to one, with exactly
-  /// [permissionKeys]. Returns its id.
+  /// [permissionKeys]. A new venue role with [organisationId] is that
+  /// organisation's own; without, SportsHub-wide. Returns its id.
   Future<String> saveRole({
     String? roleId,
     required String scope,
@@ -154,6 +187,7 @@ class AccessRepository {
     String? description,
     required bool active,
     required Set<String> permissionKeys,
+    String? organisationId,
   }) async =>
       await _client.rpc('save_role', params: {
         'role_id': roleId,
@@ -162,12 +196,72 @@ class AccessRepository {
         'description': description,
         'active': active,
         'permission_keys': permissionKeys.toList()..sort(),
+        if (organisationId != null) 'organisation_id': organisationId,
       }) as String;
 
   Future<void> deleteRole(String roleId) => _client.rpc('delete_role', params: {'role_id': roleId});
 
-  Future<List<ManagedUser>> users({String search = '', int limit = 200}) async {
+  Future<OrganisationRoles> organisationRoles(String organisationId) async => OrganisationRoles.fromJson(
+      await _client.rpc('organisation_roles', params: {'organisation_id': organisationId}) as Map<String, dynamic>);
+
+  /// What SportsHub-wide venue role [roleId] allows at organisation
+  /// [organisationId]'s venues: exactly [permissionKeys], or SportsHub's
+  /// default (and its later changes) when null; and whether it's on there.
+  Future<void> setOrganisationRole({
+    required String organisationId,
+    required String roleId,
+    required bool active,
+    Set<String>? permissionKeys,
+  }) =>
+      _client.rpc('set_organisation_role', params: {
+        'organisation_id': organisationId,
+        'role_id': roleId,
+        'active': active,
+        'permission_keys': permissionKeys == null ? null : (permissionKeys.toList()..sort()),
+      });
+
+  Future<List<Organisation>> organisations() async {
+    final rows = await _client.from('organisations').select('id, name, description, venues(count)').order('name');
+    return rows.map(Organisation.fromJson).toList();
+  }
+
+  Future<List<Venue>> organisationVenues(String organisationId) async {
+    final rows = await _client.from('venues').select().eq('organisation_id', organisationId).order('name');
+    return rows.map(Venue.fromJson).toList();
+  }
+
+  /// A new organisation ([organisationId] null) or changes to one. Returns
+  /// its id.
+  Future<String> saveOrganisation({String? organisationId, required String name, String? description}) async =>
+      await _client.rpc('save_organisation', params: {
+        'organisation_id': organisationId,
+        'name': name.trim(),
+        'description': description,
+      }) as String;
+
+  /// Only an organisation with no venues.
+  Future<void> deleteOrganisation(String organisationId) =>
+      _client.rpc('delete_organisation', params: {'organisation_id': organisationId});
+
+  /// Moves [venueId] into [organisationId]: its roles become that
+  /// organisation's.
+  Future<void> setVenueOrganisation(String venueId, String organisationId) =>
+      _client.rpc('set_venue_organisation', params: {'venue_id': venueId, 'organisation_id': organisationId});
+
+  /// Accounts matching [search], newest first; with [organisationId], only
+  /// people who work at one of its venues (found first, so the [limit]
+  /// counts only them).
+  Future<List<ManagedUser>> users({String search = '', String? organisationId, int limit = 200}) async {
     var query = _client.from('profiles').select(_userColumns);
+    if (organisationId != null) {
+      final staff = await _client
+          .from('venue_staff')
+          .select('user_id, venues!inner(organisation_id)')
+          .eq('venues.organisation_id', organisationId);
+      final ids = {for (final row in staff) row['user_id'] as String};
+      if (ids.isEmpty) return const [];
+      query = query.inFilter('id', ids.toList());
+    }
     final pattern = userSearchPattern(search);
     if (pattern.isNotEmpty) {
       query = query

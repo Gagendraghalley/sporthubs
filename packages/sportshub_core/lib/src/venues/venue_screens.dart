@@ -614,6 +614,16 @@ class VenueManageScreen extends ConsumerWidget {
                   subtitle: a.can(VenuePermission.staff) ? 'Add staff, make their accounts, choose their roles' : 'Who runs this venue',
                   onTap: () => context.push(CoreRoutes.venueStaffFor(venue.id)),
                 ),
+                if (a.can(VenuePermission.roles))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: MenuTile(
+                      icon: Icons.verified_user_outlined,
+                      title: 'Roles & permissions',
+                      subtitle: 'Your organisation\'s roles, and what each can do',
+                      onTap: () => context.push(CoreRoutes.venueRolesFor(venue.id)),
+                    ),
+                  ),
               ],
             ),
           );

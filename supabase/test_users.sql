@@ -20,7 +20,9 @@
 --   trainer@example.com     Trainer: sees members, checks them in
 --   member@example.com      A member with an account: 3 months of Monthly at the test gym
 -- and <role key>@example.com for each role made under Admin -> Roles and
--- permissions (gym_cleaner: gym.cleaner@example.com). example.com is kept for
+-- permissions (gym_cleaner: gym.cleaner@example.com), SportsHub-wide or the
+-- test gym's organisation's own. The gym gets an organisation of its own
+-- (SportsHub Test Gym), like any new venue. example.com is kept for
 -- examples, so no real person has one of these addresses: every
 -- @example.com account is a test account.
 --
@@ -74,10 +76,14 @@ begin
       ('member',     'Test Member',        'member',   null)
     ) as a (name, full_name, kind, role_key)
     union all
-    -- Roles made under Admin -> Roles and permissions.
+    -- Roles made under Admin -> Roles and permissions: SportsHub-wide ones,
+    -- and the test gym's organisation's own (other organisations' can't be
+    -- given there).
     select replace(r.key, '_', '.'), left('Test ' || r.name, 100), r.scope, r.key
     from public.roles r
     where r.is_active and r.key not in ('platform_admin', 'owner', 'manager', 'staff', 'trainer')
+      and (r.organisation_id is null
+           or r.organisation_id = (select v.organisation_id from public.venues v where v.id = v_gym))
   loop
     v_email := v_account.name || '@example.com';
 
