@@ -914,24 +914,29 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
     );
 
     final wide = MediaQuery.sizeOf(context).width >= 1280;
-    final form = ListView(
+    // Every section is built up front (not lazily), so Tab can reach each
+    // field, the summary can scroll to any section, and Save checks them all.
+    final form = SingleChildScrollView(
       padding: pagePadding(context, bottom: wide ? 40 : 110),
-      children: [
-        for (final (i, (icon, title, subtitle, child)) in sections.indexed)
-          FadeSlideIn(
-            key: _sectionKeys[i],
-            delay: Duration(milliseconds: 50 * i),
-            child: _FormSection(number: i + 1, icon: icon, title: title, subtitle: subtitle, done: done[i], child: child),
-          ),
-        if (wide)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [cancel, const SizedBox(width: 8), SizedBox(width: 220, child: submit)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, (icon, title, subtitle, child)) in sections.indexed)
+            FadeSlideIn(
+              key: _sectionKeys[i],
+              delay: Duration(milliseconds: 50 * i),
+              child: _FormSection(number: i + 1, icon: icon, title: title, subtitle: subtitle, done: done[i], child: child),
             ),
-          ),
-      ],
+          if (wide)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [cancel, const SizedBox(width: 8), SizedBox(width: 220, child: submit)],
+              ),
+            ),
+        ],
+      ),
     );
 
     return AppPage(
@@ -957,30 +962,36 @@ class _MemberFormState extends ConsumerState<_MemberForm> {
             ),
       body: Form(
         key: _form,
+        // The form and the summary are separate Tab groups: Tab goes through
+        // every field (then Cancel and Register) before the summary's links.
+        // Otherwise Tab follows screen position and jumps from a field into
+        // the summary link beside it.
         child: wide
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: form),
+                  Expanded(child: FocusTraversalGroup(child: form)),
                   SizedBox(
                     width: 360,
-                    child: SingleChildScrollView(
-                      padding: pagePadding(context, horizontal: 0).copyWith(right: 28),
-                      child: _RegisterSummary(
-                        name: _name.text,
-                        phone: _phone.text,
-                        photoPath: widget.member?.photoPath,
-                        photo: _photo?.bytes,
-                        joined: _joined,
-                        sale: _sell ? _sale : null,
-                        selling: _sell,
-                        progress: progress,
-                        sections: [for (final (i, s) in sections.indexed) (title: s.$2, done: done[i])],
-                        onSection: (i) => Scrollable.ensureVisible(
-                          _sectionKeys[i].currentContext!,
-                          duration: const Duration(milliseconds: 420),
-                          curve: Curves.easeOutCubic,
-                          alignment: 0.05,
+                    child: FocusTraversalGroup(
+                      child: SingleChildScrollView(
+                        padding: pagePadding(context, horizontal: 0).copyWith(right: 28),
+                        child: _RegisterSummary(
+                          name: _name.text,
+                          phone: _phone.text,
+                          photoPath: widget.member?.photoPath,
+                          photo: _photo?.bytes,
+                          joined: _joined,
+                          sale: _sell ? _sale : null,
+                          selling: _sell,
+                          progress: progress,
+                          sections: [for (final (i, s) in sections.indexed) (title: s.$2, done: done[i])],
+                          onSection: (i) => Scrollable.ensureVisible(
+                            _sectionKeys[i].currentContext!,
+                            duration: const Duration(milliseconds: 420),
+                            curve: Curves.easeOutCubic,
+                            alignment: 0.05,
+                          ),
                         ),
                       ),
                     ),

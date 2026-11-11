@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_membership/gym_membership.dart';
 import 'package:gym_membership/src/data/reports_data.dart';
 import 'package:gym_membership/src/screens/check_in_screen.dart';
+import 'package:gym_membership/src/screens/members_screens.dart';
 import 'package:gym_membership/src/screens/reports_screen.dart';
 import 'package:gym_membership/src/screens/staff_screens.dart';
 import 'package:sportshub_core/sportshub_core.dart';
@@ -189,6 +191,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(formatMonth(DateTime(day(0).year, day(0).month))), findsWidgets);
     expect(find.text('How they paid'), findsOneWidget);
+  });
+
+  testWidgets('Register a member: Tab stays in the form, not the summary beside it', (tester) async {
+    // Beside the app's sidebar, as in the app: the form is narrower, so its
+    // fields sit two to a row and Email starts the next row.
+    await show(
+      tester,
+      const Row(children: [SizedBox(width: 340), Expanded(child: RegisterMemberScreen(venueId: 'g1'))]),
+      with_: [...overrides(), dzongkhagsProvider.overrideWith((ref) async => const <LocationItem>[])],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Summary'), findsOneWidget, reason: 'on a computer the summary is beside the form');
+    // The summary column is the right-most 360px.
+    const summaryLeft = 1440 - 360;
+    FocusNode fieldFocus(String label) => tester
+        .widget<EditableText>(find.descendant(of: find.widgetWithText(TextFormField, label), matching: find.byType(EditableText)))
+        .focusNode;
+
+    // As on the screenshot: scroll the form until Phone is level with the
+    // summary's Address link, the case where Tab used to jump across to it.
+    final phone = find.widgetWithText(TextFormField, 'Phone *');
+    // The summary comes after the form, so its 'Address' is the last one.
+    final addressLink = find.ancestor(of: find.text('Address').last, matching: find.byType(InkWell)).first;
+    final form = tester.state<ScrollableState>(find.ancestor(of: phone, matching: find.byType(Scrollable)).first);
+    form.position.jumpTo(form.position.pixels + tester.getCenter(phone).dy - tester.getCenter(addressLink).dy);
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(phone).dy, moreOrLessEquals(tester.getCenter(addressLink).dy, epsilon: 1));
+    expect(tester.getTopLeft(addressLink).dx, greaterThanOrEqualTo(summaryLeft));
+    expect(tester.getSize(addressLink).height, lessThan(60), reason: 'the link, not the whole summary card');
+    expect(tester.getTopLeft(find.widgetWithText(TextFormField, 'Email')).dy, greaterThan(tester.getBottomLeft(phone).dy),
+        reason: 'two fields to a row: Email is below Phone');
+
+    await tester.tap(phone);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(fieldFocus('Email').hasFocus, isTrue, reason: 'Phone, then Email: not Address in the summary');
+
+    // The last health field: Tab goes on to the package, still in the form.
+    await tester.ensureVisible(find.widgetWithText(TextFormField, 'Any medical issues'));
+    await tester.tap(find.widgetWithText(TextFormField, 'Any medical issues'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus!.rect.right, lessThanOrEqualTo(summaryLeft));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Check-in: a valid card checks in; an ended package is refused, with why', (tester) async {
