@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -68,9 +72,9 @@ class _GymWelcomePageState extends ConsumerState<GymWelcomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // The sport photos, ready before the hero mosaic is seen.
-    for (final photo in const ['outdoor', 'indoor', 'racket', 'swimming']) {
-      precacheImage(GymPhoto.provider(photo), context);
+    // The sport photos, ready before the top's slides sweep them in.
+    for (final slide in _slides) {
+      precacheImage(GymPhoto.provider(slide.photo), context);
     }
   }
 
@@ -375,32 +379,98 @@ class _NavBar extends StatelessWidget {
 // ─── The top ───────────────────────────────────────────────────────────────
 
 /// The headline, what SportsHub is, Get Started and Explore Services, and
-/// three things that are true of it; a photo of training beside them (under
-/// them on a phone) with a membership card and a check-in floating over it;
-/// a wave at the foot.
-class _Hero extends StatelessWidget {
+/// three things that are true of it, beside a slide show of sports filling
+/// the right of the window (a card under them on a phone); a membership card
+/// and a check-in float over it, and a wave runs along the foot.
+///
+/// The slides move like 108.bt's opening scene: each sport sweeps in from
+/// the right behind the page's navy and orange bands, drifts slowly closer
+/// while it shows, then gives way to the next.
+class _Hero extends StatefulWidget {
   final _Layout layout;
   final VoidCallback onGetStarted;
   final VoidCallback onExplore;
 
-  /// The page's scroll: the photo drifts up a little slower than the page
-  /// (a gentle depth), only as they scroll.
+  /// The page's scroll: the photos drift up a little slower than the page
+  /// and lean in (a gentle depth), and rest once the top is out of sight.
   final ScrollController scroll;
 
   const _Hero({required this.layout, required this.onGetStarted, required this.onExplore, required this.scroll});
 
-  /// [child] moved by a share of the scroll, while the top is on screen.
-  Widget _parallax(BuildContext context, Widget child, {double rate = 0.12}) {
+  @override
+  State<_Hero> createState() => _HeroState();
+}
+
+class _HeroState extends State<_Hero> with TickerProviderStateMixin {
+  late final _SlideShow _show = _SlideShow(this);
+
+  _Layout get layout => widget.layout;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scroll.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(_Hero old) {
+    super.didUpdateWidget(old);
+    if (old.scroll != widget.scroll) {
+      old.scroll.removeListener(_onScroll);
+      widget.scroll.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Starts the slides the first time; stills them, or sets them going,
+    // when Reduce motion changes.
+    _show.setStill(reduceMotion(context));
+  }
+
+  @override
+  void dispose() {
+    widget.scroll.removeListener(_onScroll);
+    _show.dispose();
+    super.dispose();
+  }
+
+  /// The slides rest while the top is scrolled out of sight.
+  void _onScroll() {
+    if (!widget.scroll.hasClients) return;
+    final box = context.findRenderObject();
+    final height = box is RenderBox && box.hasSize ? box.size.height : 800.0;
+    _show.setVisible(widget.scroll.offset < height - 40);
+  }
+
+  /// [child] moved by a share of the scroll, and leaning in by [zoom] as it
+  /// goes, while the top is on screen.
+  Widget _parallax(BuildContext context, Widget child, {double rate = 0.12, double zoom = 0}) {
     if (reduceMotion(context)) return child;
     return AnimatedBuilder(
-      animation: scroll,
+      animation: widget.scroll,
       child: child,
       builder: (context, child) {
-        final offset = scroll.hasClients ? scroll.offset.clamp(0.0, 900.0) : 0.0;
-        return Transform.translate(offset: Offset(0, offset * rate), child: child);
+        final offset = widget.scroll.hasClients ? widget.scroll.offset.clamp(0.0, 900.0) : 0.0;
+        return Transform.translate(
+          offset: Offset(0, offset * rate),
+          child: Transform.scale(scale: 1 + zoom * offset / 900, child: child),
+        );
       },
     );
   }
+
+  /// [child], swiped left for the next sport or right for the one before.
+  Widget _swipe(Widget child) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity < -150) _show.next();
+          if (velocity > 150) _show.previous();
+        },
+        child: child,
+      );
 
   /// The sample card and the check-in note: they arrive after the photos,
   /// then float a little, out of step, and settle.
@@ -449,8 +519,8 @@ class _Hero extends StatelessWidget {
           spacing: 14,
           runSpacing: 12,
           children: [
-            _PillButton(label: 'Get Started', icon: Icons.arrow_forward_rounded, onPressed: onGetStarted),
-            _PillButton(label: 'Explore Services', outlined: true, onPressed: onExplore),
+            _PillButton(label: 'Get Started', icon: Icons.arrow_forward_rounded, onPressed: widget.onGetStarted),
+            _PillButton(label: 'Explore Services', outlined: true, onPressed: widget.onExplore),
           ],
         ),
         Padding(
@@ -483,89 +553,122 @@ class _Hero extends StatelessWidget {
     );
   }
 
-  /// The photo fills the right of the window, fading into the words.
+  /// The slides fill the right of the window, fading into the words, with
+  /// the way between them on glass under the cards. The whole window, like
+  /// a stage (never shorter than what's on it).
   Widget _wide(BuildContext context, Widget words, Color bg, double top) {
     final photoLeft = layout.width * 0.4;
-    return Stack(
-      children: [
-        Positioned(
-            left: -200,
-            top: 40,
-            child: GymGlow(color: BrandColors.blue.withValues(alpha: _Ink.of(context).dark ? 0.16 : 0.08), size: 560)),
-        Positioned(
-          left: photoLeft,
-          top: 0,
-          right: 0,
-          bottom: 0,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRect(child: _parallax(context, const _SportPhotoMosaic())),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [bg, bg.withValues(alpha: 0.7), bg.withValues(alpha: 0)],
-                    stops: const [0, 0.16, 0.5],
-                  ),
-                ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [bg.withValues(alpha: 0), bg.withValues(alpha: 0.85)],
-                    stops: const [0.72, 1],
-                  ),
-                ),
-              ),
-              const IgnorePointer(child: CustomPaint(painter: GymStripesPainter())),
-            ],
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.only(top: top + 70, bottom: _Layout.overlap + 130),
-          child: _Frame(
-            layout: layout,
-            child: Row(
-              children: [
-                Expanded(flex: 11, child: words),
-                const SizedBox(width: 40),
-                Expanded(
-                  flex: 10,
-                  child: SizedBox(
-                    height: 470,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(left: 0, bottom: 10, child: _card(const _MiniCard(), order: 0)),
-                        Positioned(
-                          right: 10,
-                          bottom: 30,
-                          child: _card(
-                            const _FloatingNote(
-                              icon: Icons.check_rounded,
-                              iconColor: BrandColors.green,
-                              title: 'Checked in',
-                              text: 'Today, 6:42 AM',
-                            ),
-                            order: 1,
-                          ),
-                        ),
-                      ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: MediaQuery.sizeOf(context).height.clamp(0.0, 1080.0)),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+              left: -200,
+              top: 40,
+              child: GymGlow(color: BrandColors.blue.withValues(alpha: _Ink.of(context).dark ? 0.16 : 0.08), size: 560)),
+          Positioned(
+            left: photoLeft,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            child: _swipe(
+              Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRect(child: _parallax(context, _SlideStage(show: _show), zoom: 0.06)),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [bg, bg.withValues(alpha: 0.7), bg.withValues(alpha: 0)],
+                        stops: const [0, 0.16, 0.5],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [bg.withValues(alpha: 0), bg.withValues(alpha: 0.85)],
+                        stops: const [0.72, 1],
+                      ),
+                    ),
+                  ),
+                  const IgnorePointer(child: CustomPaint(painter: GymStripesPainter())),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+          Padding(
+            padding: EdgeInsets.only(top: top + 70, bottom: _Layout.overlap + 130),
+            child: _Frame(
+              layout: layout,
+              child: Row(
+                children: [
+                  Expanded(flex: 11, child: words),
+                  const SizedBox(width: 40),
+                  Expanded(
+                    flex: 10,
+                    child: SizedBox(
+                      height: 440,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(left: 0, bottom: 10, child: _card(const _MiniCard(), order: 0)),
+                          Positioned(
+                            right: 10,
+                            bottom: 30,
+                            child: _card(
+                              const _FloatingNote(
+                                icon: Icons.check_rounded,
+                                iconColor: BrandColors.green,
+                                title: 'Checked in',
+                                text: 'Today, 6:42 AM',
+                              ),
+                              order: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: _Layout.overlap + 62,
+            child: _Frame(
+              layout: layout,
+              child: Row(
+                children: [
+                  const Spacer(flex: 11),
+                  const SizedBox(width: 40),
+                  Expanded(
+                    flex: 10,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FadeSlideIn(
+                        delay: const Duration(milliseconds: 900),
+                        child: _SlideControls(show: _show),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  /// The words, then the photo as a rounded card with the membership card
-  /// and the check-in over its foot.
+  /// The words, then the slides as a rounded card (swiped between, the way
+  /// between them over its top) with the membership card and the check-in
+  /// over it.
   Widget _narrow(BuildContext context, Widget words, Color bg, double top) {
     return Stack(
       children: [
@@ -588,11 +691,31 @@ class _Hero extends StatelessWidget {
                         bottom: 40,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(26),
-                          child: const Stack(
+                          child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              _SportPhotoMosaic(),
-                              IgnorePointer(child: CustomPaint(painter: GymStripesPainter())),
+                              _swipe(_SlideStage(show: _show)),
+                              // A shade under the ticks and the sport's name,
+                              // so they read over any photo.
+                              const IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Color(0x8C081428), Color(0x00081428)],
+                                      stops: [0, 0.4],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const IgnorePointer(child: CustomPaint(painter: GymStripesPainter())),
+                              Positioned(
+                                top: 8,
+                                left: 14,
+                                right: 12,
+                                child: _SlideControls(show: _show, compact: true),
+                              ),
                             ],
                           ),
                         ),
@@ -607,7 +730,7 @@ class _Hero extends StatelessWidget {
                       ),
                       Positioned(
                         right: 12,
-                        top: 16,
+                        top: 88,
                         child: _card(
                           const _FloatingNote(
                             icon: Icons.check_rounded,
@@ -630,75 +753,1052 @@ class _Hero extends StatelessWidget {
   }
 }
 
-/// A multi-sport hero assembled from the sports photography already in the app.
-/// The photographs stay local, so the landing page does not depend on a
-/// remote image service or delay while it loads.
-class _SportPhotoMosaic extends StatelessWidget {
-  const _SportPhotoMosaic();
+// ─── The top's slides ──────────────────────────────────────────────────────
+
+/// One sport in the top's slide show, from the sports photography already
+/// in the app (local, so the page never waits on an image service).
+class _Slide {
+  /// Its photo in assets/welcome.
+  final String photo;
+  final String name;
+
+  /// What the photo keeps in view as it fills its space.
+  final Alignment alignment;
+
+  /// Where it slowly draws closer to (the ball, the player).
+  final Alignment focus;
+
+  const _Slide(this.photo, this.name, {this.alignment = Alignment.center, this.focus = Alignment.center});
+}
+
+const _slides = [
+  _Slide('outdoor', 'Football',
+      alignment: Alignment(0.55, 0), focus: Alignment(0.45, -0.35)),
+  _Slide('indoor', 'Basketball',
+      alignment: Alignment(-0.3, 0), focus: Alignment(-0.1, -0.5)),
+  _Slide('racket', 'Tennis', focus: Alignment(0, 0.1)),
+  _Slide('swimming', 'Swimming'),
+  _Slide('hero', 'Strength', focus: Alignment(-0.1, -0.5)),
+  _Slide('yoga', 'Yoga', focus: Alignment(0, -0.2)),
+];
+
+/// A photo on the stage: [reveal] sweeps it in; [life] draws it closer
+/// while it shows (and on while the next sweeps over it).
+class _SlideLayer {
+  final int serial;
+  final _Slide slide;
+  final AnimationController reveal;
+  final AnimationController life;
+
+  _SlideLayer({required this.serial, required this.slide, required this.reveal, required this.life});
+
+  void stop() {
+    reveal.stop();
+    life.stop();
+  }
+
+  void dispose() {
+    reveal.dispose();
+    life.dispose();
+  }
+}
+
+/// The top's slide show: which sport is showing, the photos still sweeping
+/// in over it, and the clock that moves it on. It plays every sport twice
+/// and then rests (Play starts it again), rests while the top is out of
+/// sight, and stands still when motion is reduced (the arrows and ticks
+/// still change sport, at once).
+class _SlideShow extends ChangeNotifier {
+  _SlideShow(this._vsync) {
+    _clock = AnimationController(vsync: _vsync, duration: dwell)
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _advance();
+      });
+  }
+
+  /// How long each sport shows, from when it starts to sweep in.
+  static const dwell = Duration(milliseconds: 6500);
+
+  /// How long a photo takes to sweep in.
+  static const sweep = Duration(milliseconds: 1150);
+
+  /// Times through every sport before the show rests.
+  static const rounds = 2;
+
+  final TickerProvider _vsync;
+  late final AnimationController _clock;
+  Timer? _intro;
+
+  /// The photos on the stage, bottom first; the top one may still be
+  /// sweeping in.
+  final layers = <_SlideLayer>[];
+
+  /// The sport showing (or sweeping in).
+  int index = 0;
+
+  /// Whether it moves on by itself (Pause stops it).
+  bool playing = false;
+
+  bool _started = false;
+  bool _still = false;
+  bool _visible = true;
+  int _serial = 0;
+  int _advances = 0;
+
+  /// How far through its time the showing sport is, 0 to 1.
+  Animation<double> get progress => _clock;
+
+  /// Motion is reduced: no clock, no sweeping, no drift.
+  bool get still => _still;
+
+  bool get _moving => playing && _visible && !_still;
+
+  /// Starts the show (sweeping the first sport in, a moment after the page
+  /// arrives), or stills it or sets it going when [still] changes.
+  void setStill(bool still) {
+    if (_started && still == _still) return;
+    final first = !_started;
+    _started = true;
+    _still = still;
+    playing = !still;
+    if (first) {
+      _show(0, delay: still ? null : const Duration(milliseconds: 250));
+      return;
+    }
+    if (still) {
+      _intro?.cancel();
+      _pause();
+      if (layers.isNotEmpty) layers.last.reveal.value = 1;
+    } else {
+      _resume();
+    }
+    notifyListeners();
+  }
+
+  /// Rests the show while the top is out of sight.
+  void setVisible(bool visible) {
+    if (visible == _visible) return;
+    _visible = visible;
+    visible ? _resume() : _pause();
+  }
+
+  void go(int slide) {
+    if (slide == index && layers.isNotEmpty) return;
+    _show(slide);
+  }
+
+  void next() => go((index + 1) % _slides.length);
+  void previous() => go((index - 1 + _slides.length) % _slides.length);
+
+  /// Pause, or Play (from the start of a round when it had rested).
+  void toggle() {
+    if (_still) return;
+    playing = !playing;
+    if (playing) {
+      if (_advances >= _slides.length * rounds) _advances = 0;
+      _resume();
+    } else {
+      _pause();
+    }
+    notifyListeners();
+  }
+
+  /// Puts [slide] on top, to sweep in over the one showing.
+  void _show(int slide, {Duration? delay}) {
+    index = slide;
+    final layer = _SlideLayer(
+      serial: _serial++,
+      slide: _slides[slide],
+      reveal: AnimationController(vsync: _vsync, duration: sweep),
+      life: AnimationController(vsync: _vsync, duration: dwell + sweep),
+    );
+    layer.reveal.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _settled(layer);
+    });
+    layers.add(layer);
+    _clock.value = 0;
+    if (_still) {
+      layer.reveal.value = 1;
+    } else if (delay != null) {
+      _intro = Timer(delay, () => _begin(layer));
+    } else {
+      _begin(layer);
+    }
+    notifyListeners();
+  }
+
+  void _begin(_SlideLayer layer) {
+    if (_still) return;
+    layer.reveal.forward();
+    if (_moving) {
+      layer.life.forward();
+      _clock.forward();
+    }
+  }
+
+  /// [layer] covers the stage: the photos under it go.
+  void _settled(_SlideLayer layer) {
+    final at = layers.indexOf(layer);
+    if (at <= 0) return;
+    final gone = layers.sublist(0, at);
+    layers.removeRange(0, at);
+    for (final old in gone) {
+      old.stop();
+    }
+    notifyListeners();
+    // Once the stage has rebuilt without them.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final old in gone) {
+        old.dispose();
+      }
+    });
+  }
+
+  void _advance() {
+    _advances++;
+    if (_advances >= _slides.length * rounds) playing = false;
+    _show((index + 1) % _slides.length);
+  }
+
+  void _pause() {
+    _clock.stop();
+    for (final layer in layers) {
+      layer.life.stop();
+    }
+  }
+
+  void _resume() {
+    if (!_moving) return;
+    for (final layer in layers) {
+      if (layer.reveal.value > 0 && !layer.life.isCompleted) layer.life.forward();
+    }
+    if (layers.isNotEmpty && layers.last.reveal.value > 0) _clock.forward();
+  }
+
+  @override
+  void dispose() {
+    _intro?.cancel();
+    _clock.dispose();
+    for (final layer in layers) {
+      layer.dispose();
+    }
+    super.dispose();
+  }
+}
+
+/// The slide show's photos, filling their space: each new one sweeps in
+/// from the right behind a navy and an orange band (the page's stripes),
+/// pushing the one under it aside and into shade, then draws slowly closer
+/// while it shows.
+class _SlideStage extends StatelessWidget {
+  final _SlideShow show;
+
+  const _SlideStage({required this.show});
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
-        // The big photo fades up, then each sport settles into place in
-        // turn, a little after the headline.
-        Widget reveal(int order, Widget child) => FadeSlideIn(
-              delay: Duration(milliseconds: 160 + 120 * order),
-              offset: order == 0 ? 0 : 20,
-              duration: const Duration(milliseconds: 620),
-              child: child,
-            );
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            reveal(0, const GymPhoto('outdoor', alignment: Alignment(0.55, 0))),
-            Positioned(
-              left: width * 0.035,
-              top: height * 0.06,
-              width: width * 0.34,
-              height: height * 0.40,
-              child: reveal(1, const _SportPhotoTile(photo: 'indoor')),
-            ),
-            Positioned(
-              right: width * 0.05,
-              top: height * 0.15,
-              width: width * 0.37,
-              height: height * 0.42,
-              child: reveal(2, const _SportPhotoTile(photo: 'racket')),
-            ),
-            Positioned(
-              left: width * 0.29,
-              bottom: height * 0.06,
-              width: width * 0.38,
-              height: height * 0.36,
-              child: reveal(3, const _SportPhotoTile(photo: 'swimming')),
-            ),
-          ],
-        );
-      },
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: show,
+        builder: (context, _) {
+          final layers = show.layers;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              for (var i = 0; i < layers.length; i++)
+                _SlideLayerView(
+                  key: ValueKey(layers[i].serial),
+                  layer: layers[i],
+                  cover: i + 1 < layers.length ? layers[i + 1].reveal : null,
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
-class _SportPhotoTile extends StatelessWidget {
-  final String photo;
+class _SlideLayerView extends StatelessWidget {
+  final _SlideLayer layer;
 
-  const _SportPhotoTile({required this.photo});
+  /// The next photo sweeping in over this one, if any.
+  final Animation<double>? cover;
+
+  const _SlideLayerView({super.key, required this.layer, this.cover});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final still = reduceMotion(context);
+    final over = cover;
+    final photo = GymPhoto(layer.slide.photo, alignment: layer.slide.alignment);
+    return LayoutBuilder(
+      builder: (context, box) => AnimatedBuilder(
+        animation: Listenable.merge([layer.reveal, layer.life, if (over != null) over]),
+        child: photo,
+        builder: (context, photo) {
+          final shown = still ? 1.0 : Motion.easeInOut.transform(layer.reveal.value);
+          final covered = still || over == null ? 0.0 : Motion.easeInOut.transform(over.value);
+          // It slides in a little as it sweeps, and aside as the next one
+          // does; a hair larger than its space, so the slide never shows an
+          // edge.
+          final dx = box.maxWidth * (0.04 * (1 - shown) - 0.03 * covered);
+          final image = still
+              ? photo!
+              : Transform.translate(
+                  offset: Offset(dx, 0),
+                  child: Transform.scale(
+                    scale: 1.04,
+                    child: Transform.scale(
+                      scale: 1 + 0.05 * layer.life.value,
+                      alignment: layer.slide.focus,
+                      child: photo,
+                    ),
+                  ),
+                );
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipPath(
+                clipper: _SweepClipper(shown),
+                clipBehavior: shown >= 1 ? Clip.none : Clip.antiAlias,
+                child: image,
+              ),
+              if (covered > 0) IgnorePointer(child: ColoredBox(color: Colors.black.withValues(alpha: 0.3 * covered))),
+              if (shown > 0 && shown < 1) IgnorePointer(child: CustomPaint(painter: _SweepBandsPainter(shown))),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Where a sweeping photo's edge is, [shown] of the way across [size]: its
+/// top and its foot, leaning like the page's stripes. Off to the right at
+/// 0, off to the left (bands and all) at 1.
+(double, double) _sweepEdge(Size size, double shown) {
+  final slant = size.height * 0.45;
+  const bands = _SweepBandsPainter.width;
+  final top = (size.width + slant + bands) * (1 - shown) - bands * shown;
+  return (top, top - slant);
+}
+
+/// The part of the stage a sweeping photo has covered.
+class _SweepClipper extends CustomClipper<Path> {
+  final double shown;
+
+  const _SweepClipper(this.shown);
+
+  @override
+  Path getClip(Size size) {
+    if (shown >= 1) return Path()..addRect(Offset.zero & size);
+    final (top, foot) = _sweepEdge(size, shown);
+    final right = top > size.width ? top : size.width;
+    return Path()
+      ..moveTo(top, 0)
+      ..lineTo(right, 0)
+      ..lineTo(right, size.height)
+      ..lineTo(foot, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_SweepClipper oldClipper) => oldClipper.shown != shown;
+}
+
+/// The navy and orange bands leading a sweeping photo's edge.
+class _SweepBandsPainter extends CustomPainter {
+  static const orange = 12.0;
+  static const navy = 30.0;
+  static const width = orange + navy;
+
+  final double shown;
+
+  const _SweepBandsPainter(this.shown);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final (top, foot) = _sweepEdge(size, shown);
+    final h = size.height;
+    // From and to, leftward of the edge.
+    Path band(double from, double to) => Path()
+      ..moveTo(top - to, 0)
+      ..lineTo(top - from, 0)
+      ..lineTo(foot - from, h)
+      ..lineTo(foot - to, h)
+      ..close();
+    canvas.drawPath(band(orange, width), Paint()..color = BrandColors.navy.withValues(alpha: 0.92));
+    // A pixel over the photo's edge, so no seam shows between.
+    canvas.drawPath(band(-1, orange), Paint()..color = BrandColors.orange);
+  }
+
+  @override
+  bool shouldRepaint(_SweepBandsPainter oldDelegate) => oldDelegate.shown != shown;
+}
+
+/// Which sport is showing and the way between them, on polished glass under
+/// the photos: its number and name set like a scoreboard, a slim track whose
+/// segment for the sport showing stretches out (tap one to see that sport),
+/// the sport before and after, and beside them Pause, ringed by the time
+/// the sport has left. A gleam crosses the glass as each sport arrives. Over
+/// the photo's top on a phone ([compact]), where a swipe moves between them.
+class _SlideControls extends StatelessWidget {
+  final _SlideShow show;
+  final bool compact;
+
+  const _SlideControls({required this.show, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: show,
+      builder: (context, _) => compact ? _compact(context) : _panel(context),
+    );
+  }
+
+  Widget _panel(BuildContext context) {
+    final panel = _Glass(
+      radius: 30,
+      gleam: show.index,
+      child: SizedBox(
+        height: 60,
+        child: LayoutBuilder(
+          builder: (context, box) {
+            // The track needs room; in a narrow window the name takes it.
+            final roomy = box.maxWidth >= 420;
+            return Row(
+              children: [
+                const SizedBox(width: 24),
+                _SlideNumber(index: show.index),
+                const _FadedRule(height: 30),
+                if (roomy) ...[
+                  SizedBox(width: 112, child: _SlideName(index: show.index)),
+                  const SizedBox(width: 4),
+                  Expanded(child: _SlideTrack(show: show)),
+                  const SizedBox(width: 18),
+                ] else ...[
+                  Expanded(child: _SlideName(index: show.index)),
+                  const SizedBox(width: 10),
+                ],
+                _arrow(context, Icons.arrow_back_rounded, 'Previous sport', show.previous),
+                const SizedBox(width: 6),
+                _arrow(context, Icons.arrow_forward_rounded, 'Next sport', show.next),
+                const SizedBox(width: 10),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 600),
+      child: Row(
+        children: [
+          Expanded(child: panel),
+          if (!show.still) ...[const SizedBox(width: 12), _pause(context, size: 60, onPhoto: false)],
+        ],
+      ),
+    );
+  }
+
+  Widget _compact(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SlideTrack(show: show, onPhoto: true),
+        Row(
+          children: [
+            _SlideNumber(index: show.index, onPhoto: true),
+            const _FadedRule(height: 22, onPhoto: true, gap: 12),
+            Expanded(child: _SlideName(index: show.index, onPhoto: true)),
+            if (!show.still) _pause(context, size: 40, onPhoto: true),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// A faint hairline circle that warms to orange under the mouse.
+  Widget _arrow(BuildContext context, IconData icon, String tooltip, VoidCallback onPressed) {
+    final ink = _Ink.of(context);
+    final hairline = ink.pick(LightColors.navy.withValues(alpha: 0.12), Colors.white.withValues(alpha: 0.16));
+    final rest = ink.heading.withValues(alpha: 0.78);
+    bool lit(Set<WidgetState> states) => states.contains(WidgetState.hovered) || states.contains(WidgetState.focused);
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      icon: Icon(icon, size: 18),
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size.square(40)),
+        minimumSize: const WidgetStatePropertyAll(Size.square(40)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        shape: const WidgetStatePropertyAll(CircleBorder()),
+        side: WidgetStateProperty.resolveWith(
+            (states) => BorderSide(color: lit(states) ? BrandColors.orange.withValues(alpha: 0.7) : hairline)),
+        foregroundColor: WidgetStateProperty.resolveWith((states) => lit(states) ? BrandColors.orange : rest),
+        backgroundColor: WidgetStateProperty.resolveWith((states) => lit(states)
+            ? BrandColors.orange.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: ink.dark ? 0.04 : 0.35)),
+        overlayColor: WidgetStatePropertyAll(BrandColors.orange.withValues(alpha: 0.1)),
+      ),
+    );
+  }
+
+  /// Pause (or Play) on its own glass, ringed by how much of the showing
+  /// sport's time has gone.
+  Widget _pause(BuildContext context, {required double size, required bool onPhoto}) {
+    final ink = _Ink.of(context);
+    final face = Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: Padding(
+            padding: EdgeInsets.all(onPhoto ? 3 : 5),
+            child: AnimatedBuilder(
+              animation: show.progress,
+              builder: (context, _) => CustomPaint(
+                painter: _RingPainter(
+                  value: show.progress.value,
+                  track: onPhoto
+                      ? Colors.white.withValues(alpha: 0.28)
+                      : ink.pick(LightColors.navy.withValues(alpha: 0.08), Colors.white.withValues(alpha: 0.12)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: show.toggle,
+          tooltip: show.playing ? 'Pause the slides' : 'Play the slides',
+          icon: Icon(show.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: size * 0.38),
+          style: IconButton.styleFrom(
+            foregroundColor: onPhoto ? Colors.white : ink.heading.withValues(alpha: 0.85),
+            hoverColor: BrandColors.orange.withValues(alpha: 0.1),
+            fixedSize: Size.square(size),
+            minimumSize: Size.square(size),
+            padding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+    return _Glass(
+      radius: size / 2,
+      onPhoto: onPhoto,
+      gleam: show.index,
+      gleamDelay: const Duration(milliseconds: 260),
+      child: face,
+    );
+  }
+}
+
+/// The track's and the ring's orange: full where it leads, fading to peach
+/// behind.
+const _peach = Color(0xFFFFC29B);
+
+/// Polished glass: what's behind it blurred under a soft, see-through wash
+/// (deep navy in the dark; clear over a photo), light pooled on its upper
+/// half, a rim catching the light along its top, and a soft, wide shadow.
+/// When [gleam] changes a streak of light crosses it.
+class _Glass extends StatelessWidget {
+  final double radius;
+  final Widget child;
+
+  /// Over a photo: clearer, with a brighter rim.
+  final bool onPhoto;
+
+  /// What sends a gleam across it when it changes; none when null.
+  final Object? gleam;
+  final Duration gleamDelay;
+
+  const _Glass({
+    required this.radius,
+    required this.child,
+    this.onPhoto = false,
+    this.gleam,
+    this.gleamDelay = Duration.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = _Ink.of(context);
+    final corners = BorderRadius.circular(radius);
+    // An amount for light or dark, mixed while the theme switches.
+    double mix(double light, double dark) => light + (dark - light) * ink.t;
+    final (List<Color> wash, double sheen, Color rimTop, Color rimFoot, double shine) = onPhoto
+        ? (
+            [Colors.white.withValues(alpha: 0.24), Colors.white.withValues(alpha: 0.06)],
+            0.32,
+            Colors.white.withValues(alpha: 0.75),
+            Colors.white.withValues(alpha: 0.08),
+            0.45,
+          )
+        : (
+            [
+              ink.pick(Colors.white.withValues(alpha: 0.72), const Color(0xB31E2D4F)),
+              ink.pick(Colors.white.withValues(alpha: 0.48), const Color(0x990B1630)),
+            ],
+            mix(0.8, 0.12),
+            Colors.white.withValues(alpha: mix(1, 0.4)),
+            Colors.white.withValues(alpha: mix(0.3, 0.05)),
+            mix(0.7, 0.18),
+          );
+    return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
-        boxShadow: const [BoxShadow(color: Color(0x3507152E), blurRadius: 20, offset: Offset(0, 10))],
+        borderRadius: corners,
+        boxShadow: [
+          BoxShadow(
+            color: onPhoto
+                ? Colors.black.withValues(alpha: 0.18)
+                : ink.pick(LightColors.navy.withValues(alpha: 0.13), Colors.black.withValues(alpha: 0.42)),
+            blurRadius: onPhoto ? 18 : 44,
+            spreadRadius: -8,
+            offset: Offset(0, onPhoto ? 8 : 18),
+          ),
+        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(19),
-        child: GymPhoto(photo),
+        borderRadius: corners,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: CustomPaint(
+            foregroundPainter: _RimPainter(radius: radius, top: rimTop, foot: rimFoot),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: wash),
+              ),
+              child: Stack(
+                children: [
+                  // Light pooled on the upper half, as on polished glass.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.white.withValues(alpha: sheen), Colors.white.withValues(alpha: 0)],
+                            stops: const [0, 0.55],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  child,
+                  if (gleam != null)
+                    Positioned.fill(
+                      child: _Gleam(trigger: gleam!, delay: gleamDelay, color: Colors.white.withValues(alpha: shine)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
+    );
+  }
+}
+
+/// The glass's rim: bright along the top where it catches the light,
+/// fading away toward the foot.
+class _RimPainter extends CustomPainter {
+  final double radius;
+  final Color top;
+  final Color foot;
+
+  const _RimPainter({required this.radius, required this.top, required this.foot});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const width = 1.2;
+    final rim = RRect.fromRectAndRadius((Offset.zero & size).deflate(width / 2), Radius.circular(radius - width / 2));
+    canvas.drawRRect(
+      rim,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [top, foot],
+        ).createShader(Offset.zero & size),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RimPainter oldDelegate) =>
+      oldDelegate.radius != radius || oldDelegate.top != top || oldDelegate.foot != foot;
+}
+
+/// A streak of light that crosses once, leaning like the stripes: when it
+/// first shows (a moment after the glass arrives) and each time [trigger]
+/// changes. Nothing when motion is reduced.
+class _Gleam extends StatefulWidget {
+  final Object trigger;
+  final Duration delay;
+  final Color color;
+
+  const _Gleam({required this.trigger, required this.color, this.delay = Duration.zero});
+
+  @override
+  State<_Gleam> createState() => _GleamState();
+}
+
+class _GleamState extends State<_Gleam> with SingleTickerProviderStateMixin {
+  static const _cross = Duration(milliseconds: 1100);
+
+  late final AnimationController _c = AnimationController(vsync: this, duration: widget.delay + _cross);
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: Interval(widget.delay.inMilliseconds / (widget.delay + _cross).inMilliseconds, 1, curve: Motion.easeInOut),
+  );
+  Timer? _first;
+
+  @override
+  void initState() {
+    super.initState();
+    // After the glass has risen into place.
+    _first = Timer(const Duration(milliseconds: 1400), _shine);
+  }
+
+  @override
+  void didUpdateWidget(_Gleam old) {
+    super.didUpdateWidget(old);
+    if (old.trigger != widget.trigger) _shine();
+  }
+
+  void _shine() {
+    if (!mounted || reduceMotion(context)) return;
+    _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _first?.cancel();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (reduceMotion(context)) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _t,
+        builder: (context, _) => CustomPaint(painter: _GleamPainter(t: _t.value, color: widget.color)),
+      ),
+    );
+  }
+}
+
+class _GleamPainter extends CustomPainter {
+  final double t;
+  final Color color;
+
+  const _GleamPainter({required this.t, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (t <= 0 || t >= 1) return;
+    final h = size.height;
+    final band = math.max(44.0, size.width * 0.14);
+    final lean = h * 0.7;
+    // From wholly off the left to wholly off the right.
+    final left = -band - lean + (size.width + band + lean) * t;
+    final streak = Path()
+      ..moveTo(left + lean, 0)
+      ..lineTo(left + lean + band, 0)
+      ..lineTo(left + band, h)
+      ..lineTo(left, h)
+      ..close();
+    canvas.drawPath(
+      streak,
+      Paint()
+        ..shader = LinearGradient(colors: [color.withValues(alpha: 0), color, color.withValues(alpha: 0)])
+            .createShader(Rect.fromLTWH(left, 0, band + lean, h)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GleamPainter oldDelegate) => oldDelegate.t != t || oldDelegate.color != color;
+}
+
+/// A thin upright rule that fades away at both ends.
+class _FadedRule extends StatelessWidget {
+  final double height;
+  final double gap;
+
+  /// White over a photo, rather than on the glass.
+  final bool onPhoto;
+
+  const _FadedRule({required this.height, this.gap = 16, this.onPhoto = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = _Ink.of(context);
+    final line = onPhoto
+        ? Colors.white.withValues(alpha: 0.55)
+        : ink.pick(LightColors.navy.withValues(alpha: 0.2), Colors.white.withValues(alpha: 0.24));
+    return Container(
+      width: 1,
+      height: height,
+      margin: EdgeInsets.symmetric(horizontal: gap),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [line.withValues(alpha: 0), line, line.withValues(alpha: 0)],
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin ring, filled clockwise from the top by [value]: orange at its
+/// head, fading to peach behind.
+class _RingPainter extends CustomPainter {
+  static const stroke = 2.0;
+
+  final double value;
+  final Color track;
+
+  const _RingPainter({required this.value, required this.track});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(stroke / 2);
+    final line = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    canvas.drawOval(rect, line..color = track);
+    if (value <= 0) return;
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      2 * math.pi * value,
+      false,
+      // Its own paint: the track's faint colour would dim the gradient.
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round
+        ..shader = SweepGradient(
+          colors: const [_peach, BrandColors.orange],
+          stops: [0, value.clamp(0.01, 1.0)],
+          transform: const GradientRotation(-math.pi / 2),
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter oldDelegate) => oldDelegate.value != value || oldDelegate.track != track;
+}
+
+/// The showing sport's number, large and slanted like the headline and
+/// fading downward, out of how many, small: "02 /06". The number rolls over
+/// as the sport changes.
+class _SlideNumber extends StatelessWidget {
+  final int index;
+
+  /// White over a photo, rather than on the glass.
+  final bool onPhoto;
+
+  const _SlideNumber({required this.index, this.onPhoto = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = _Ink.of(context);
+    String two(int n) => n.toString().padLeft(2, '0');
+    final ink0 = onPhoto ? Colors.white : ink.heading;
+    final fade = [ink0, ink0.withValues(alpha: onPhoto ? 0.6 : 0.38)];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        _Roll(
+          index: index,
+          child: ShaderMask(
+            key: ValueKey(index),
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (bounds) => LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: fade,
+            ).createShader(bounds),
+            // Room for the slant: an italic figure leans past its own box
+            // at the top right, where the roll's clip and the fade would
+            // cut it off.
+            child: Padding(
+              padding: EdgeInsets.only(right: onPhoto ? 5 : 7),
+              child: Text(
+                two(index + 1),
+                style: TextStyle(
+                  fontSize: onPhoto ? 22 : 28,
+                  fontWeight: FontWeight.w800,
+                  fontStyle: FontStyle.italic,
+                  letterSpacing: -0.6,
+                  height: 1.1,
+                  color: Colors.white,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Text(
+          '/${two(_slides.length)}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: onPhoto ? Colors.white.withValues(alpha: 0.7) : context.brand.muted.withValues(alpha: 0.8),
+            fontFeatures: const [FontFeature.tabularFigures()],
+            shadows: onPhoto ? const [Shadow(color: Color(0x80000000), blurRadius: 10)] : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The showing sport's name in spaced capitals, rolling over as it changes.
+class _SlideName extends StatelessWidget {
+  final int index;
+
+  /// White over a photo, rather than on the glass.
+  final bool onPhoto;
+
+  const _SlideName({required this.index, this.onPhoto = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = _Ink.of(context);
+    return _Roll(
+      index: index,
+      duration: const Duration(milliseconds: 720),
+      child: Text(
+        _slides[index].name.toUpperCase(),
+        key: ValueKey(index),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: onPhoto ? 12 : 12.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.8,
+          height: 1.2,
+          color: onPhoto ? Colors.white : ink.heading.withValues(alpha: 0.82),
+          shadows: onPhoto ? const [Shadow(color: Color(0x80000000), blurRadius: 10)] : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// [child] (keyed by [index]) rolls up into place as the one before slips
+/// away upward, gone by halfway so the two never show at once; at once when
+/// motion is reduced.
+class _Roll extends StatelessWidget {
+  final int index;
+  final Duration duration;
+  final Widget child;
+
+  const _Roll({required this.index, required this.child, this.duration = const Duration(milliseconds: 640)});
+
+  @override
+  Widget build(BuildContext context) {
+    if (reduceMotion(context)) return child;
+    return AnimatedSwitcher(
+      duration: duration,
+      // A new builder each time, so the one leaving goes up, not back down.
+      transitionBuilder: (child, animation) {
+        final entering = child.key == ValueKey(index);
+        final rise = Tween(begin: Offset(0, entering ? 0.9 : -0.9), end: Offset.zero)
+            .chain(CurveTween(curve: Motion.ease));
+        return ClipRect(
+          child: SlideTransition(
+            position: animation.drive(rise),
+            child: FadeTransition(opacity: animation.drive(CurveTween(curve: const Interval(0.5, 1))), child: child),
+          ),
+        );
+      },
+      layoutBuilder: (current, previous) => Stack(
+        alignment: Alignment.centerLeft,
+        children: [...previous, if (current != null) current],
+      ),
+      child: child,
+    );
+  }
+}
+
+/// A slim track, a segment for each sport: the one showing stretches out,
+/// glowing orange fading to peach, as the others draw in; tap a segment to
+/// see that sport.
+class _SlideTrack extends StatelessWidget {
+  final _SlideShow show;
+
+  /// Over a photo, rather than on the glass.
+  final bool onPhoto;
+
+  const _SlideTrack({required this.show, this.onPhoto = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = _Ink.of(context);
+    final rest = onPhoto
+        ? Colors.white.withValues(alpha: 0.38)
+        : ink.pick(LightColors.navy.withValues(alpha: 0.12), Colors.white.withValues(alpha: 0.16));
+    final duration = Motion.of(context, const Duration(milliseconds: 520));
+    const gap = 4.0;
+    return LayoutBuilder(
+      builder: (context, box) {
+        // The one showing is three shares wide, the rest one each.
+        final share = ((box.maxWidth - gap * (_slides.length - 1)) / (_slides.length + 2)).clamp(0.0, 400.0);
+        return Row(
+          children: [
+            for (var i = 0; i < _slides.length; i++) ...[
+              if (i > 0) const SizedBox(width: gap),
+              Semantics(
+                button: true,
+                selected: i == show.index,
+                label: 'Show ${_slides[i].name}, ${i + 1} of ${_slides.length}',
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => show.go(i),
+                    child: AnimatedContainer(
+                      duration: duration,
+                      curve: Motion.ease,
+                      width: share * (i == show.index ? 3 : 1),
+                      height: 28,
+                      alignment: Alignment.center,
+                      child: AnimatedContainer(
+                        duration: duration,
+                        curve: Motion.ease,
+                        height: i == show.index ? 3 : 2,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: i == show.index ? const [_peach, BrandColors.orange] : [rest, rest],
+                          ),
+                          borderRadius: BorderRadius.circular(2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: BrandColors.orange.withValues(alpha: i == show.index ? 0.35 : 0),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
