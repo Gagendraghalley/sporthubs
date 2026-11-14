@@ -441,3 +441,14 @@ verify_jwt = true
 # Staff page): only for a signed-in user; the database checks their roles.
 [functions.admin-users]
 verify_jwt = true
+
+# Ask AI (a gym's Ask AI page): only for a signed-in user; the database
+# checks they work at the gym and counts their questions.
+[functions.ask-ai]
+verify_jwt = true
+
+# SportsHub's assistant (the floating Ask AI button, for anyone): visitors
+# have no account, so no token is needed; the database counts questions by
+# a hash of their address instead.
+[functions.ask-sportshub]
+verify_jwt = false

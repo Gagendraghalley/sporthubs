@@ -4,7 +4,8 @@
 # supabase_stub.sql), then plays an admin, a gym owner, front-desk staff and
 # members through tests/database/scenario_test.sql, which checks every rule,
 # then master data, roles and permissions through access_test.sql, and
-# organisations and their own roles through organisations_test.sql.
+# organisations and their own roles through organisations_test.sql, and Ask
+# AI's daily question allowance through ai_test.sql.
 # Needs PostgreSQL 14+ installed (brew install postgresql). Touches nothing else.
 #
 #   scripts/test_database.sh
@@ -32,5 +33,6 @@ db -f tests/database/scenario_test.sql 2>&1 | grep -E "ok  |FAIL|ERROR|PASSED" |
 db -f tests/database/access_test.sql 2>&1 | grep -E "ok  |FAIL|ERROR|PASSED" | sed 's/^.*NOTICE:  //'
 db -f tests/database/organisations_test.sql 2>&1 | grep -E "ok  |FAIL|ERROR|PASSED" | sed 's/^.*NOTICE:  //'
 db -f tests/database/registration_test.sql 2>&1 | grep -E "ok  |FAIL|ERROR|PASSED" | sed 's/^.*NOTICE:  //'
+db -f tests/database/ai_test.sql 2>&1 | grep -E "ok  |FAIL|ERROR|PASSED" | sed 's/^.*NOTICE:  //'
 echo "Applying supabase/seed.sql (local test data)"
 db -f supabase/seed.sql

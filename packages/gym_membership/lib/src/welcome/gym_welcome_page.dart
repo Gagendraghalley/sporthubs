@@ -1880,35 +1880,44 @@ class _Faq extends StatelessWidget {
 
   const _Faq({super.key, required this.layout});
 
+  // As the gyms work today: the front desk registers members (no account
+  // needed). SportsHub's assistant answers from the same facts
+  // (supabase/functions/ask-sportshub/reply.ts): change both together.
   static const questions = [
     (
       'How do I join a gym?',
-      'Sign up, open Find a gym and ask to join the plan you want. Pay the gym, and your membership '
-          'starts as soon as the staff confirm your payment.',
+      "You don't need a SportsHub account. Go to the gym: the front desk registers you (your details and a "
+          'photo), sells you a package for 1 to 24 months and takes your payment. Your QR card comes on '
+          'WhatsApp or as a download.',
     ),
     (
       'What payment methods are accepted?',
-      'You pay the gym directly: cash, mBoB or bank transfer. The staff record it in SportsHub, with '
-          'the journal number for mBoB and transfers.',
+      'You pay the gym directly: cash, mBoB or bank transfer. The desk records it in SportsHub, with the '
+          'journal number for mBoB and transfers.',
     ),
     (
       'When does my membership start and end?',
-      "It starts the day your payment is confirmed and runs for the plan's length. Renew early and the "
-          'new plan starts the day after the current one ends, so you never lose days.',
+      'It starts on the day you join and ends on the same date that many months later: join on 8 November '
+          'for 3 months and it ends on 8 February, and you can still come that day. Renew early and the new '
+          'package starts the day the current one ends, so you never lose days.',
     ),
     (
       'How do I check in?',
-      'Open My gym and show your QR code at the desk. The staff scan it, or type your member code.',
+      'Show your QR card at the counter. The staff scan it, or type your 6-character member code or your '
+          'phone number. It works while your package covers that day.',
+    ),
+    (
+      'What if I lose my card?',
+      'Ask the front desk for a new card. Your old one stops working, so nobody else can use it.',
     ),
     (
       'Can I cancel my membership?',
-      'You can cancel a request while it is still waiting for payment. Once a membership is active, '
-          'talk to your gym: changes and refunds are up to them.',
+      'Talk to your gym: changes and refunds are up to them.',
     ),
     (
       'How do I put my gym on SportsHub?',
-      'Sign up, then Register your venue, choose Gym and add your plans. Once SportsHub has verified '
-          'your gym, members can find it and join.',
+      'Sign up, then Register your venue, choose Gym and add your packages and prices. Once the SportsHub '
+          'team has verified your gym, add your staff and start registering members at the front desk.',
     ),
   ];
 

@@ -18,7 +18,11 @@
 #                        pooler string from the dashboard's Connect button,
 #                        [YOUR-PASSWORD] and all; the password goes in from
 #                        SUPABASE_DB_PASSWORD.
-# Neither secret is saved in the project.
+# CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_TOKEN: optional. Turn on Ask AI
+#                        (Cloudflare Workers AI); they're stored as the
+#                        Edge Functions' secrets (ask-ai, ask-sportshub).
+#                        Once is enough.
+# No secret is saved in the project.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -52,6 +56,16 @@ fi
 
 echo "== Edge Functions"
 sb functions deploy --use-api --yes
+
+if [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_AI_TOKEN:-}" ]]; then
+  echo "== Ask AI: Cloudflare Workers AI secrets"
+  # Through a private file, so the token isn't on the command line.
+  secrets="$(mktemp)"
+  trap 'rm -f "$secrets"' EXIT
+  printf 'CLOUDFLARE_ACCOUNT_ID=%s\nCLOUDFLARE_AI_TOKEN=%s\n' "$CLOUDFLARE_ACCOUNT_ID" "$CLOUDFLARE_AI_TOKEN" > "$secrets"
+  sb secrets set --env-file "$secrets" --yes
+  rm -f "$secrets"
+fi
 
 echo "== Auth settings (email codes)"
 sb config push --yes

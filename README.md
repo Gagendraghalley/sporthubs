@@ -19,11 +19,12 @@ packages/sportshub_core/      accounts, profiles, venues and staff, payments, no
 packages/ground_booking/      module 1: links to the ground booking website
 packages/gym_membership/      module 2: gym plans, memberships, check-in, staff and owner pages
 supabase/migrations/          core, then one migration per module
-supabase/functions/           Edge Functions (delete-account, admin-users)
+supabase/functions/           Edge Functions (delete-account, admin-users, ask-ai, ask-sportshub; _shared)
 supabase/config.toml          auth settings (email codes) and function settings
 supabase/templates/code.html  the sign-in email, showing the 6-digit code
 supabase/test_users.sql       test accounts, one per role (test_users_remove.sql removes them)
 tests/database/               end-to-end checks of the database rules
+tests/functions/              checks of the Edge Functions' own logic (Deno)
 scripts/                      deploy_supabase.sh, build_web.sh, deploy_web.sh, test_database.sh
 ```
 
@@ -202,9 +203,49 @@ Members walk in; they need no SportsHub account.
 4. **Renew**: on their page. A renewal starts on the day the current package expires, so the dates don't drift (8 Feb, 8 May, 8 Aug), or today once it has ended (`gym_renew_member`).
 5. **Owner**: a dashboard (today's numbers, shortcuts, what needs attention, a getting-started checklist for a new gym), packages and prices (members on each, times sold), the members register (search, status filters with counts, sort, table or cards), income (12 months, by method, every payment), **reports & analytics** (new members, visits by day and hour, renewal rate, package mix, most regular members, and what it all says) and staff with their roles.
 
+6. **Ask AI** (every staff member; the floating Ask AI button on the gym's pages): questions in their own words, in English or Dzongkha. Questions about the gym ("busiest hours this month?", "who hasn't come in two weeks?", "when did Pema last come?", "revenue by payment method this year?") are answered with a chart or a list of members. How-to questions ("how do I renew a member?") get a short answer and a button to the page that does it. See [Ask AI](#ask-ai-cloudflare-workers-ai).
+
 Members with a SportsHub account (`member_id`) still work underneath: their QR code is `sportshub:member:<account id>`, and `gym_activate_subscription` runs their memberships by the plan's days.
 
 Dates are Bhutan dates (Asia/Thimphu), both ends included.
+
+### Ask AI (Cloudflare Workers AI)
+
+A floating **Ask AI** button sits in the bottom-right corner of every page, for visitors too ("Ask AI" on a computer, its icon on a phone). It opens a chat beside the page (the whole screen on a phone), and the conversation is still there when it's opened again. It isn't in the menus. Which assistant it opens depends on the page:
+
+| Where | Assistant | Who | Edge Function |
+|---|---|---|---|
+| A gym's staff pages | **Ask AI** for that gym: questions about its members, visits, packages and money, and how-tos. Its expand button opens it full size (`/gyms/<id>/manage/ask`). | That gym's staff | `ask-ai` |
+| Everywhere else | **SportsHub assistant**: what SportsHub is, finding and joining a gym, checking in, putting a gym on SportsHub, accounts. "Gyms in Paro?" lists the verified gyms there. | Anyone, no account needed | `ask-sportshub` |
+
+The button stays off pages it would get in the way of: the full Ask AI page, and pages with a Save bar along the bottom (the member form, the role editors). A module chooses this through `buildAssistant`, `hidesAssistantButton`, `assistantLinks` and `publicVenueRoute` on `SportsHubModule`.
+
+The AI never sees the gym's records. It only decides **which of the app's reports** answers a question (and for how long a period, or whose name to look for), or writes a short how-to from a guide written into the function (`supabase/functions/*/reply.ts`). The app then works the answer out itself, so the numbers are always SportsHub's own and follow the person's role (no money for the front desk). Gym lists come from SportsHub's public list of verified venues.
+
+1. The app sends the question, with the conversation's last three questions, to the Edge Function.
+2. The database counts it before the AI is asked:
+   - `ai_take_question` (gym staff, as the person asking): they must work at that gym, 25 questions a person a Bhutan day. It keeps who asked, where and when (not what) for 90 days.
+   - `ai_take_public_question` (anyone, called by `ask-sportshub` with the service role): 15 a day from one address and 150 a day from everyone (about half the free allowance), so visitors can't use up the gyms' share. Addresses are kept only as a hash keyed with a secret, for 30 days.
+3. The function asks Cloudflare Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`, in JSON mode) and checks the reply against its lists of reports, pages and dzongkhags before passing it on.
+4. The app draws the chart or list from SportsHub's data.
+
+The suggestions in each chat have their answers written into the app: they skip the AI, don't count, and work even when Ask AI isn't set up.
+
+**Cost: free, within limits.** Workers AI gives every Cloudflare account 10,000 "neurons" a day, shared by both assistants and every gym on SportsHub. It resets at 00:00 UTC (6 am in Bhutan). A question uses a few dozen neurons, so a few hundred questions a day fit. On the free plan, going over is never charged; questions fail with "Today's free AI questions are used up" until the reset. For many gyms, move to Workers Paid ($0.011 per 1,000 neurons above the free 10,000).
+
+**Privacy.** Only the question text leaves SportsHub (to Cloudflare); members' details, medical notes and photos never do. Questions can contain a member's name when staff type one; the public chat asks people not to type personal details.
+
+**Turn it on** (once):
+
+1. Cloudflare dashboard → AI → Workers AI → Use REST API: **Create a Workers AI API Token**, and copy the **Account ID** from the same page.
+2. Deploy with them. This applies the migrations, deploys both functions and stores both values as their secrets:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_AI_TOKEN=... \
+SUPABASE_ACCESS_TOKEN=sbp_... SUPABASE_DB_PASSWORD=... scripts/deploy_supabase.sh
+```
+
+Without them, both chats still work: the suggestions answer, and typed questions say it isn't set up yet. To try another Workers AI model (it must support JSON mode), set `CLOUDFLARE_AI_MODEL` the same way with `supabase secrets set`. The functions log each question's token use (Supabase → Edge Functions → ask-ai or ask-sportshub → Logs).
 
 ### Logo, splash and loader
 
@@ -266,6 +307,7 @@ When it moves to its own domain, add the domain to the Pages project (Custom dom
 (cd packages/ground_booking && flutter test)
 (cd apps/sportshub_app && flutter test)
 scripts/test_database.sh      # needs a local PostgreSQL (brew install postgresql)
+deno test tests/functions/    # the Edge Functions' own logic (brew install deno)
 ```
 
-`scripts/test_database.sh` runs `tests/database/scenario_test.sql` (memberships end to end) and `access_test.sql` (master data, roles and permissions).
+`scripts/test_database.sh` runs `tests/database/scenario_test.sql` (memberships end to end), `access_test.sql` (master data, roles and permissions), and the organisations, registration and Ask AI (`ai_test.sql`: the daily question allowance) checks.

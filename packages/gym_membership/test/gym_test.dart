@@ -252,7 +252,7 @@ void main() {
       final patterns = [for (final r in module.routes) (r as GoRoute).path];
       expect(patterns, containsAll([GymRoutes.gyms, GymRoutes.gym, GymRoutes.dashboard, GymRoutes.checkIn, GymRoutes.members,
         GymRoutes.registerMember, GymRoutes.member, GymRoutes.editMember, GymRoutes.memberRegistered, GymRoutes.plans,
-        GymRoutes.income, GymRoutes.reports]));
+        GymRoutes.income, GymRoutes.reports, GymRoutes.ask]));
       // 'new' before ':memberId', or registering would open a member called 'new'.
       expect(patterns.indexOf(GymRoutes.registerMember), lessThan(patterns.indexOf(GymRoutes.member)));
       // All in the app's frame: one menu.

@@ -44,6 +44,21 @@ void main() {
     expect(find.textContaining('cash, mBoB or bank transfer'), findsOneWidget);
   });
 
+  testWidgets('the answers follow how gyms work today: the front desk registers members', (tester) async {
+    await show(tester, sizes['computer']!);
+    const question = 'How do I join a gym?';
+    await tester.ensureVisible(find.text(question));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(question));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(question));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('the front desk registers you'), findsOneWidget);
+    for (final old in ['ask to join', 'Open My gym', 'the day after the current one ends', 'cancel a request']) {
+      expect(find.textContaining(old), findsNothing, reason: old);
+    }
+  });
+
   testWidgets('it claims no member counts, ratings or prices', (tester) async {
     await show(tester, sizes['computer']!);
     for (final madeUp in ['10K+', '10,000', '4.8', 'Nu ', 'Rated']) {

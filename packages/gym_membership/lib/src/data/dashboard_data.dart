@@ -1,6 +1,7 @@
 import 'package:sportshub_core/sportshub_core.dart';
 
 import 'gym_models.dart';
+import 'registered_member.dart';
 
 /// Where a gym's members stand today, one count per member.
 class MemberStanding {
@@ -122,6 +123,18 @@ double? incomeChangeMonthToDate(Iterable<Payment> payments, DateTime today) {
 /// days) or week (90 days).
 List<RevenuePoint> visitSeries(Iterable<GymCheckIn> checkIns, DateTime today, RevenueRange range) =>
     _series([for (final c in checkIns) (c.checkedInAt, 1)], today, range);
+
+/// Members who joined in [range] up to [today], counted by day (7 and 30
+/// days), week (90 days) or month (12 months).
+List<RevenuePoint> joinedSeries(Iterable<GymMember> members, DateTime today, RevenueRange range) => _series(
+      [
+        for (final m in members)
+          // Midnight of the day they joined, in Bhutan.
+          (DateTime.utc(m.joinedOn.year, m.joinedOn.month, m.joinedOn.day).subtract(BhutanTime.offset), 1),
+      ],
+      today,
+      range,
+    );
 
 /// [events] (a moment and an amount) added up into [range]'s points.
 List<RevenuePoint> _series(List<(DateTime, int)> events, DateTime today, RevenueRange range) {

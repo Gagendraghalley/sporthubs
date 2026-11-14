@@ -81,6 +81,24 @@ abstract class SportsHubModule {
   /// numbers); null for nothing.
   Widget? buildManagerSection(BuildContext context, Venue venue, VenueAccess access) => null;
 
+  /// What the floating Ask AI button opens on [location] when this module
+  /// has its own assistant there (a gym's Ask AI on that gym's staff pages),
+  /// as an [AssistantPanel]; null for SportsHub's assistant, which answers
+  /// questions about the platform.
+  Widget? buildAssistant(BuildContext context, String location) => null;
+
+  /// Pages the floating Ask AI button would get in the way on: its chat is
+  /// open full size, or a bar of buttons runs along the bottom.
+  bool hidesAssistantButton(String location) => false;
+
+  /// Pages SportsHub's assistant may point people to, by the keys its guide
+  /// uses (supabase/functions/ask-sportshub/reply.ts), e.g. 'gyms'.
+  Map<String, ModuleMenuItem> get assistantLinks => const {};
+
+  /// A venue's public page, for SportsHub's assistant's lists of venues;
+  /// null when it has none in the app.
+  String? publicVenueRoute(Venue venue) => null;
+
   /// Whether [path] is one of this module's pages.
   bool ownsPath(String path) => basePaths.any((base) => path == base || path.startsWith('$base/'));
 

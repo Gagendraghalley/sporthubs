@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../assistant/assistant_chat.dart';
 import '../module/module_providers.dart';
 import '../module/sportshub_module.dart';
 import '../router/core_routes.dart';
@@ -46,9 +47,13 @@ class WelcomeScreen extends ConsumerWidget {
     final enabled = ref.watch(enabledModulesProvider);
     // The splash while the modules load, rather than flashing the plain page
     // before a module's own.
+    // With the floating Ask AI button: SportsHub's assistant, for visitors.
     return SplashGate(
       ready: enabled.hasValue || !enabled.isLoading,
-      builder: (context) => _page(context, enabled.valueOrNull ?? const <SportsHubModule>[]),
+      builder: (context) => AssistantFrame(
+        location: CoreRoutes.welcome,
+        child: _page(context, enabled.valueOrNull ?? const <SportsHubModule>[]),
+      ),
     );
   }
 

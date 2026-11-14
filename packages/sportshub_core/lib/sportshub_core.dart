@@ -7,6 +7,8 @@ export 'src/access/access_repository.dart';
 export 'src/access/permission_gate.dart';
 export 'src/access/user_screens.dart' show VenueRoleField, canGiveRole;
 export 'src/admin/admin_repository.dart';
+export 'src/assistant/assistant_chat.dart';
+export 'src/assistant/public_assistant.dart';
 export 'src/auth/auth_repository.dart';
 export 'src/config/env.dart';
 export 'src/masters/location.dart';

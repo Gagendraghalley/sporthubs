@@ -78,6 +78,14 @@ class GroundBookingModule extends SportsHubModule {
         ),
       ];
 
+  /// Where SportsHub's assistant sends people asking about grounds.
+  @override
+  Map<String, ModuleMenuItem> get assistantLinks => {
+        'grounds': ModuleMenuItem(title: 'Book a ground', icon: Icons.sports_soccer_rounded, externalUrl: page(grounds)),
+        'tournaments':
+            ModuleMenuItem(title: 'Tournaments', icon: Icons.emoji_events_outlined, externalUrl: page(tournaments)),
+      };
+
   @override
   ServiceNav? navigation(WidgetRef ref, String location) => ServiceNav(
         key: key,

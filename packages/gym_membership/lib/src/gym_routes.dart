@@ -21,6 +21,9 @@ abstract final class GymRoutes {
   static const income = '/gyms/:id/manage/income';
   static const reports = '/gyms/:id/manage/reports';
 
+  /// Ask AI: questions in their own words, answered with the gym's reports.
+  static const ask = '/gyms/:id/manage/ask';
+
   /// Gone (members no longer ask to join in the app); old notifications
   /// that point here open Members.
   static const requests = '/gyms/:id/manage/requests';
@@ -39,6 +42,7 @@ abstract final class GymRoutes {
   static String newPlanFor(String id) => '/gyms/$id/manage/plans?new=1';
   static String incomeFor(String id) => '/gyms/$id/manage/income';
   static String reportsFor(String id) => '/gyms/$id/manage/reports';
+  static String askFor(String id) => '/gyms/$id/manage/ask';
 
   /// The gym whose staff page [path] is, if it's one.
   static String? gymIdIn(String path) =>

@@ -7,6 +7,7 @@ import 'dashboard/gym_dashboard_page.dart';
 import 'data/gym_repository.dart';
 import 'gym_permissions.dart';
 import 'gym_routes.dart';
+import 'screens/ask_screen.dart';
 import 'screens/check_in_screen.dart';
 import 'screens/member_registered_screen.dart';
 import 'screens/members_screens.dart';
@@ -84,6 +85,7 @@ class GymModule extends SportsHubModule {
         ),
         GoRoute(path: GymRoutes.income, builder: (_, s) => IncomeScreen(venueId: s.pathParameters['id']!)),
         GoRoute(path: GymRoutes.reports, builder: (_, s) => ReportsScreen(venueId: s.pathParameters['id']!)),
+        GoRoute(path: GymRoutes.ask, builder: (_, s) => AskScreen(venueId: s.pathParameters['id']!)),
         GoRoute(path: GymRoutes.requests, redirect: (_, s) => GymRoutes.membersFor(s.pathParameters['id']!)),
       ];
 
@@ -146,6 +148,27 @@ class GymModule extends SportsHubModule {
             route: GymRoutes.reportsFor(venue.id),
           ),
       ];
+
+  /// On a gym's staff pages, the floating Ask AI button opens that gym's
+  /// own: questions about its members, visits and money.
+  @override
+  Widget? buildAssistant(BuildContext context, String location) {
+    final id = gymIdInPath(location);
+    return id == null ? null : GymAssistantPanel(venueId: id);
+  }
+
+  /// Not over Ask AI itself, nor over the register form's Save bar.
+  @override
+  bool hidesAssistantButton(String location) =>
+      RegExp(r'^/gyms/[^/]+/manage/(ask|members/new|members/[^/]+/edit)$').hasMatch(location);
+
+  @override
+  Map<String, ModuleMenuItem> get assistantLinks => const {
+        'gyms': ModuleMenuItem(title: 'Gyms on SportsHub', icon: Icons.fitness_center_rounded, route: GymRoutes.gyms),
+      };
+
+  @override
+  String? publicVenueRoute(Venue venue) => venue.type == gymVenueType ? GymRoutes.gymFor(venue.id) : null;
 
   @override
   Widget? buildWelcome(BuildContext context) => const GymWelcomePage();

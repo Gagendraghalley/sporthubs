@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../assistant/assistant_chat.dart';
 import '../auth/auth_repository.dart';
 import '../module/module_providers.dart';
 import '../widgets/splash.dart';
@@ -20,13 +21,14 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(currentUserIdProvider) == null) return child;
+    // The floating Ask AI button over every page, for visitors too.
+    if (ref.watch(currentUserIdProvider) == null) return AssistantFrame(location: location, child: child);
     final enabled = ref.watch(enabledModulesProvider);
     // The splash while the services load, rather than the page flashing up
     // without its frame.
     return SplashGate(
       ready: enabled.hasValue || !enabled.isLoading,
-      builder: (context) => PlatformShell(location: location, child: child),
+      builder: (context) => AssistantFrame(location: location, child: PlatformShell(location: location, child: child)),
     );
   }
 }
